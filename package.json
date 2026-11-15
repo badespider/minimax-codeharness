@@ -31,7 +31,7 @@
     "test:windows": "node scripts/run-vitest-suite.mjs windows",
     "test:siwc-windows": "node --import tsx --test packages/local-runtime-v2/src/service/model-system/siwc-profile-storage.node-test.ts test/siwc-auth-manager.test.mjs test/siwc-auth-windows-integration.test.mjs test/siwc-revoke.test.mjs",
     "test:artifact": "node --test test/public-artifact.test.mjs",
-    "test:release-tools": "node --test test/source-sync.test.mjs test/auto-workflow-install.test.mjs",
+    "test:release-tools": "node --test test/source-sync.test.mjs test/auto-workflow-install.test.mjs test/setup-windows.test.mjs test/windows-chatgpt-launcher.test.mjs",
     "lint": "pnpm run lint:tui",
     "lint:tui": "eslint packages/tui/src packages/tui/test --ext .ts,.mjs --quiet"
   },

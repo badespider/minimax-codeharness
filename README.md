@@ -29,6 +29,30 @@ Give a blinking pocket pet a focus timer. Then ask: “Make pause a long press, 
 
 **No hardware required.** The example runs locally in your browser, with no frontend dependencies. Asking the CLI to edit code requires a MiniMax account with available credits or your own compatible model API; model calls may incur charges. The finished example runs without a model account.
 
+## Set up this fork on Windows
+
+This fork adds an experimental ChatGPT-plan connection, cross-project Auto workflow skills, and an effort control. The official installation commands in [Quick start](#quick-start) install the upstream CLI, not this fork.
+
+Open PowerShell on Windows and run this setup command:
+
+```powershell
+irm https://raw.githubusercontent.com/badespider/minimax-codeharness/feat/agent-trust-foundations/scripts/setup-windows.ps1 | iex
+```
+
+The setup downloads and builds this fork, installs its Auto workflow and skills into the selected MiniMax profile, and adds `mcode-chatgpt` to your user PATH. It needs internet access. If Git or Node.js is missing, it attempts installation through Windows Package Manager (`winget`), which may request administrator approval. If `winget` is unavailable, or your existing Node.js version is unsupported, install Git and Node.js 22.19 or later in the 22.x series, or 24.2 or later through 26.x, and rerun the command. The setup uses pnpm 9.12.0, downloading it through npm if needed.
+
+If your profile already has different instructions or same-named skills, setup stops rather than overwriting them; see [Auto workflow across projects](docs/auto-workflow.md) for how to merge them.
+
+Open a new terminal if the command is not yet on PATH. From the folder of the project you want to work on, start MiniMax with:
+
+```powershell
+mcode-chatgpt
+```
+
+On first use, sign in in the browser with the ChatGPT account whose plan you want to use and approve the separate MiniMax connection. Your Codex login remains separate. OpenAI determines plan and account eligibility; this connection is experimental and currently Windows-only. See [ChatGPT plan connection](docs/chatgpt-plan-experimental.md) for account and troubleshooting details.
+
+Inside MiniMax, use `/permission auto` to select Auto, `/skills` to view the installed skills, and `/effort` to change the current model's reasoning effort. Auto directs the agent to select applicable skills, run relevant tests and review changes; it is model-driven, so verify the final report, and some commands may still require approval.
+
 ## Quick start
 
 ### 1. Install MCode

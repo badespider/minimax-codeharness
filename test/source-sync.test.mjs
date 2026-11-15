@@ -656,11 +656,13 @@ test('rejects existing output, output in repositories and unsafe inventory', t =
 // Exercise the real verification dispatcher in an isolated repository. These
 // commands stand in for gates, so a failure test cannot accidentally run builds
 // or the release-tools suite recursively.
-function verificationFixture(t) {
+function verificationFixture(t, { alias = false } = {}) {
   const directory = mkdtempSync(path.join(tmpdir(), 'verify-fixture-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const root = path.join(directory, 'source');
-  mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  const physicalRoot = path.join(directory, 'source');
+  mkdirSync(path.join(physicalRoot, 'scripts'), { recursive: true });
+  const root = alias ? path.join(directory, 'alias') : physicalRoot;
+  if (alias) symlinkSync(physicalRoot, root, process.platform === 'win32' ? 'junction' : 'dir');
   const verifier = path.join(root, 'scripts/verify.mjs');
   copyFileSync(new URL('../scripts/verify.mjs', import.meta.url), verifier);
   const manager = path.join(directory, 'manager.cjs');
@@ -682,9 +684,10 @@ function verificationFixture(t) {
   `);
   const reportDir = path.join(directory, 'reports');
   const summaryPath = path.join(directory, 'summary.md');
-  function run(args = [], env = {}) {
-    return spawnSync(process.execPath, [verifier, ...args], {
-      cwd: root,
+  function run(args = [], env = {}, executionRoot = root) {
+    const requestedVerifier = executionRoot === root ? verifier : path.join(executionRoot, 'scripts/verify.mjs');
+    return spawnSync(process.execPath, [requestedVerifier, ...args], {
+      cwd: executionRoot,
       encoding: 'utf8',
       timeout: 20000,
       env: {
@@ -700,10 +703,76 @@ function verificationFixture(t) {
     });
   }
   return {
-    root, run, exportRecord, reportDir, summaryPath,
+    directory, root, run, exportRecord, reportDir, summaryPath,
     report: () => JSON.parse(readFileSync(path.join(reportDir, 'verification.json'), 'utf8')),
   };
 }
+
+test('verification recognizes a clean checkout reached through a directory alias', t => {
+  const f = verificationFixture(t, { alias: true });
+  const git = (...args) => spawnSync('git', args, { cwd: f.root, encoding: 'utf8' });
+  assert.equal(git('init', '-q').status, 0);
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
+  assert.equal(git('add', '.').status, 0);
+  const commit = git('-c', 'user.name=Verification Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture');
+  assert.equal(commit.status, 0, commit.stderr);
+  const revision = git('rev-parse', 'HEAD').stdout.trim();
+  const nodeOptions = `${process.env.NODE_OPTIONS ?? ''} --preserve-symlinks-main`.trim();
+  assert.equal(f.run(['--profile', 'docs'], { NODE_OPTIONS: nodeOptions }).status, 0);
+  assert.equal(f.report().revision, revision);
+  assert.deepEqual(f.report().checkout, { initial: 'clean', final: 'clean' });
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'changed through alias');
+  assert.equal(f.run(['--profile', 'docs'], { NODE_OPTIONS: nodeOptions }).status, 0);
+  assert.equal(f.report().revision, null);
+  assert.deepEqual(f.report().checkout, { initial: 'dirty', final: 'dirty' });
+});
+
+test('verification does not attribute an enclosing repository revision to a nested source root', t => {
+  const f = verificationFixture(t);
+  const git = (...args) => spawnSync('git', args, { cwd: f.root, encoding: 'utf8' });
+  assert.equal(git('init', '-q').status, 0);
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
+  assert.equal(git('add', '.').status, 0);
+  assert.equal(git('-c', 'user.name=Verification Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture').status, 0);
+  const nested = path.join(f.root, 'nested');
+  mkdirSync(path.join(nested, 'scripts'), { recursive: true });
+  copyFileSync(path.join(f.root, 'scripts/verify.mjs'), path.join(nested, 'scripts/verify.mjs'));
+  copyFileSync(path.join(f.root, 'scripts/export-source-preview.mjs'), path.join(nested, 'scripts/export-source-preview.mjs'));
+  assert.equal(f.run(['--profile', 'docs'], {}, nested).status, 0);
+  assert.equal(f.report().revision, null);
+  assert.deepEqual(f.report().checkout, { initial: 'unavailable', final: 'unavailable' });
+});
+
+test('verification fails closed if the checkout path cannot be canonicalized', t => {
+  const f = verificationFixture(t);
+  const git = (...args) => spawnSync('git', args, { cwd: f.root, encoding: 'utf8' });
+  assert.equal(git('init', '-q').status, 0);
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
+  assert.equal(git('add', '.').status, 0);
+  assert.equal(git('-c', 'user.name=Verification Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture').status, 0);
+  const preload = path.join(f.directory, 'deny-realpath.cjs');
+  writeFileSync(preload, `
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const original = fs.realpathSync.native;
+    const target = ${JSON.stringify(path.resolve(f.root))};
+    fs.realpathSync.native = (value, ...args) => {
+      const compare = (item) => process.platform === 'win32' ? item.toLowerCase() : item;
+      if (compare(path.resolve(value)) === compare(target)) {
+        const error = new Error('fixture canonicalization denied');
+        error.code = 'EACCES';
+        throw error;
+      }
+      return original(value, ...args);
+    };
+    require('node:module').syncBuiltinESMExports();
+  `);
+  const nodeOptions = `${process.env.NODE_OPTIONS ?? ''} --require="${preload.replaceAll('\\', '/')}"`.trim();
+  const result = f.run(['--profile', 'docs'], { NODE_OPTIONS: nodeOptions });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(f.report().revision, null);
+  assert.deepEqual(f.report().checkout, { initial: 'unavailable', final: 'unavailable' });
+});
 
 test('verification attributes a revision only when checkout checkpoints are clean', t => {
   const f = verificationFixture(t);

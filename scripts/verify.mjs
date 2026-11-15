@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -145,7 +146,14 @@ function checkoutState() {
   const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
   const top = git(["rev-parse", "--show-toplevel"]);
   const comparable = (value) => process.platform === "win32" ? value.toLowerCase() : value;
-  if (top.status !== 0 || comparable(path.resolve(top.stdout.trim())) !== comparable(path.resolve(root)))
+  if (top.status !== 0) return { state: "unavailable", revision: null };
+  let sameRoot = false;
+  try {
+    sameRoot = comparable(realpathSync.native(top.stdout.trim())) === comparable(realpathSync.native(root));
+  } catch {
+    return { state: "unavailable", revision: null };
+  }
+  if (!sameRoot)
     return { state: "unavailable", revision: null };
   const head = git(["rev-parse", "HEAD"]);
   const status = git(["status", "--porcelain", "--untracked-files=all"]);

@@ -2,7 +2,10 @@
   "schemaVersion": 1,
   "files": [
     ".agents/skills/cli-guide/SKILL.md",
+    ".agents/skills/correct-repeated-failures/SKILL.md",
     ".agents/skills/cross-layer-drift-sweep/SKILL.md",
+    ".agents/skills/interrogate-change/SKILL.md",
+    ".agents/skills/model-minimax-state/SKILL.md",
     ".agents/skills/retro/SKILL.md",
     ".agents/skills/testing-workflow/SKILL.md",
     ".agents/skills/verify-all-runtime-sinks/SKILL.md",

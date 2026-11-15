@@ -31,6 +31,7 @@ import { isValidCompactionTriggerSetting } from '@mavis/context-manager';
 import type { AppDb } from '../../infra/db/client.js';
 
 import type { ContentSafetyService } from '../content-safety/index.js';
+import { readLocalPermissionMode } from '../permission/request-contracts.js';
 import {
   ArchiveTitleModelAdapter,
   SessionTitleModelAdapter,
@@ -480,6 +481,7 @@ export async function createLocalAgentHost<
       ...options.product.executor,
       nativeDelete: () =>
         options.product.preparation.configBuilder.config().permission?.nativeDelete === true,
+      readPermissionMode: () => readLocalPermissionMode(options.product.preparation.configBuilder.config().permissionMode),
       logger: options.product.runner.logger,
       backgroundCadenceReminder: createBackgroundCadenceReminder(contextUsageAnchor),
       canAppendExecutionBudgetReminder: (input, marker) =>

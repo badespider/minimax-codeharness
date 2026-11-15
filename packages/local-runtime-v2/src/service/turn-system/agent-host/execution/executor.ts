@@ -549,7 +549,7 @@ export class LocalRuntimeTurnExecutor<
       ...ptc.context,
     } as TContext;
     const caller = preparedExecution.caller;
-    const standardSystemPrompt = joinPrompt(input.assembly.systemPromptPrefix, baseSystemPrompt);
+    const standardSystemPrompt = joinPrompt(input.assembly.systemPromptPrefix, baseSystemPrompt, permissionModeReminder(this.options.readPermissionMode?.()));
     const standardContextUsagePromptRanges = readPreparedContextUsagePromptRanges(
       input.preparation.agentConfig,
       input.assembly.systemPromptPrefix,
@@ -731,6 +731,12 @@ export class LocalRuntimeTurnExecutor<
       // Diagnostic reporting cannot replace the owning Turn failure.
     }
   }
+}
+
+/** Use a fixed vocabulary so untrusted configuration cannot inject prompt text. */
+function permissionModeReminder(mode: string | undefined): string {
+  if (mode !== 'default' && mode !== 'auto' && mode !== 'acceptEdits' && mode !== 'bypassPermissions' && mode !== 'off') return '';
+  return `<system-reminder>MiniMax permission mode: ${mode}. This is the current mode for this turn.</system-reminder>`;
 }
 
 function pluginToolContext<TAgent extends AgentExecutionSnapshot>(

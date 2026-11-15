@@ -318,6 +318,8 @@ export interface LocalRuntimeTurnExecutorOptions<
   readonly backgroundCadenceReminder?: BackgroundCadenceReminder;
   /** Read when preparing a new Turn's Bash guidance, not during the model loop. */
   readonly nativeDelete?: () => boolean;
+  /** Read the current product permission mode once when each Turn is prepared. */
+  readonly readPermissionMode?: () => string | undefined;
   readonly canAppendExecutionBudgetReminder?: ExecutionBudgetReminderAdmission;
   /** Exact child Turn scope; notifications join this Turn and never independently reactivate it. */
   readonly createChildBashLifecycle?: (input: {

@@ -1055,6 +1055,36 @@ export function evaluateBashStatic(
         continue;
       }
 
+      // Do not let this soft, whole-command result hide an explicit rule or
+      // a hard denial on an individual command in the pipeline. Evaluate
+      // every segment before returning; deny takes precedence over ask.
+      let explicitAsk: { command: string; reason: SubcommandResult['reason'] } | undefined;
+      for (const subcommand of getSubcommands()) {
+        const result = evaluateSingleSubcommand(subcommand, compiledBashRules, mode, enrichedCtx);
+        if (result.verdict === 'deny') {
+          const reasons = new Map<string, SubcommandResult>();
+          reasons.set(subcommand, { behavior: 'deny', reason: result.reason });
+          return { verdict: 'deny', reason: { type: 'subcommandResults', reasons } };
+        }
+        if (result.verdict === 'ask' && result.reason.type === 'rule') {
+          // User ask rules are evaluated before hard checks by the ordinary
+          // evaluator. Check the same segment without user rules so the
+          // soft pre-scan cannot hide a hard denial on that segment either.
+          const withoutRules = evaluateSingleSubcommand(subcommand, [], mode, enrichedCtx);
+          if (withoutRules.verdict === 'deny') {
+            const reasons = new Map<string, SubcommandResult>();
+            reasons.set(subcommand, { behavior: 'deny', reason: withoutRules.reason });
+            return { verdict: 'deny', reason: { type: 'subcommandResults', reasons } };
+          }
+          explicitAsk ??= { command: subcommand, reason: result.reason };
+        }
+      }
+      if (explicitAsk) {
+        const reasons = new Map<string, SubcommandResult>();
+        reasons.set(explicitAsk.command, { behavior: 'ask', reason: explicitAsk.reason });
+        return { verdict: 'ask', reason: { type: 'subcommandResults', reasons } };
+      }
+
       const verdict = mode === 'auto' ? 'undecided' : 'ask';
       logWholeLayer('soft-prescan-pipe-to-shell', verdict, 'pipe-to-shell', {
         pipeMatch,

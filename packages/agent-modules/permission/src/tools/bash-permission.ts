@@ -729,7 +729,7 @@ function compileBashPermissionRules(bashRules: PermissionRule[]): CompiledBashPe
  *
  * Safety floor: the exemption ONLY short-circuits the whole-command
  * SOFT pre-scan. The per-subcommand evaluator downstream still runs
- * HARD final-deny (step 3), HARD sensitive-read (step 4), user-allow
+ * HARD final-deny, HARD sensitive-read (step 4), user-allow
  * (step 5), SUBCOMMAND_DANGEROUS (step 6), and the per-subcommand SOFT
  * pre-scan (step 7). HARD final-deny across the WHOLE command is also
  * already checked by step 0b BEFORE us, so a `wget ... | sh` whose
@@ -806,7 +806,7 @@ export interface BashEvaluationResult {
  * Unified per-command static bash permission evaluator. Single source of
  * truth for default / auto / bypass mode evaluation. Layered policy:
  *
- *   COMMON (every mode):  1. user deny → deny  2. user ask → ask  3. HARD final-deny → deny
+ *   COMMON (every mode): user deny → hard/slow denial → user ask
  *   BYPASS EARLY-EXIT:    common did not match → allow
  *   DEFAULT / AUTO (per subcommand):
  *     4. HARD sensitive-read  → ask (default) / undecided (auto → LLM)
@@ -1067,15 +1067,6 @@ export function evaluateBashStatic(
           return { verdict: 'deny', reason: { type: 'subcommandResults', reasons } };
         }
         if (result.verdict === 'ask' && result.reason.type === 'rule') {
-          // User ask rules are evaluated before hard checks by the ordinary
-          // evaluator. Check the same segment without user rules so the
-          // soft pre-scan cannot hide a hard denial on that segment either.
-          const withoutRules = evaluateSingleSubcommand(subcommand, [], mode, enrichedCtx);
-          if (withoutRules.verdict === 'deny') {
-            const reasons = new Map<string, SubcommandResult>();
-            reasons.set(subcommand, { behavior: 'deny', reason: withoutRules.reason });
-            return { verdict: 'deny', reason: { type: 'subcommandResults', reasons } };
-          }
           explicitAsk ??= { command: subcommand, reason: result.reason };
         }
       }
@@ -1290,17 +1281,6 @@ function evaluateSingleSubcommand(
     }
   }
 
-  // Step 2: user ask rule
-  for (const { rule, parsedRule } of bashRules) {
-    if (rule.ruleBehavior !== 'ask') continue;
-    if (!rule.ruleValue.ruleContent) {
-      return logLayer('user-ask', { verdict: 'ask', reason: { type: 'rule', rule } });
-    }
-    if (matchesRestrictiveRule(parsedRule)) {
-      return logLayer('user-ask', { verdict: 'ask', reason: { type: 'rule', rule } });
-    }
-  }
-
   const recoverableWindowsDelete =
     !bashCtx?.nativeDelete &&
     bashCtx?.platform === 'win32' &&
@@ -1308,7 +1288,7 @@ function evaluateSingleSubcommand(
       ? parseWindowsNativeDelete(command, bashCtx.shellFamily)
       : undefined;
 
-  // Step 3: HARD final-deny (per-subcommand)
+  // HARD final-deny (per-subcommand)
   // Strip heredoc bodies / non-executed echo-printf data before pattern match
   // so a `cat <<'EOF' ... /etc/shadow ... EOF` MR description body does not
   // get matched as a real read against the sensitive path. Aligned with the
@@ -1330,7 +1310,7 @@ function evaluateSingleSubcommand(
     }
   }
 
-  // Step 3.5: slow-command guard (COMMON layer — runs in default, auto AND
+  // Slow-command guard (COMMON layer — runs in default, auto AND
   // bypass modes). Unbounded whole-disk traversals (`find /` with no
   // -maxdepth, `grep -r /`, `du /`, `ls -R /`, Windows `dir /s C:\`) are not
   // dangerous but routinely run for many minutes and surface to the user as a
@@ -1354,6 +1334,15 @@ function evaluateSingleSubcommand(
         category: slowHit.category,
       },
     });
+  }
+
+  // A user ask rule must not downgrade a hard or slow-command denial.
+  // Keep it ahead of permissive rules and bypass-mode allowances.
+  for (const { rule, parsedRule } of bashRules) {
+    if (rule.ruleBehavior !== 'ask') continue;
+    if (!rule.ruleValue.ruleContent || matchesRestrictiveRule(parsedRule)) {
+      return logLayer('user-ask', { verdict: 'ask', reason: { type: 'rule', rule } });
+    }
   }
 
   if (helpLooking && !helpWords && bashRules.some(({ rule }) => rule.ruleBehavior !== 'allow')) {
@@ -1383,7 +1372,7 @@ function evaluateSingleSubcommand(
   // under bypass routes to real disk deletion instead of the recoverable
   // trash, defeating the trash contract documented in step 8.
   // Catastrophic forms (rm -rf /, rm -rf ~, rm -rf *) are already caught
-  // by step 3 hard-final-deny above, so by here only non-catastrophic rm
+  // by the hard-final-deny check above, so by here only non-catastrophic rm
   // reaches us and is safe to rewrite.
   if (mode === 'bypass') {
     if (recoverableWindowsDelete) {
@@ -1450,7 +1439,7 @@ function evaluateSingleSubcommand(
   // -------- DEFAULT / AUTO LAYER --------
 
   // Step 4: HARD sensitive-read → ask (default) / undecided (auto → LLM)
-  // Same heredoc / echo-printf stripping as Step 3 — otherwise a
+  // Same heredoc / echo-printf stripping as the hard-final-deny check — otherwise a
   // documentation example like `cat /etc/shadow` inside an MR description
   // heredoc trips sensitive-read even though the body is data, not shell.
   for (const surface of getPermissionSurfaces()) {
@@ -1459,7 +1448,7 @@ function evaluateSingleSubcommand(
       recoverableWindowsDelete: Boolean(recoverableWindowsDelete),
     });
     if (!hardHit) continue;
-    // final-deny already handled in step 3; non-final-deny falls here.
+    // Final-deny already handled above; non-final-deny falls here.
     return logLayer('hard-sensitive-read', {
       verdict: mode === 'auto' ? 'undecided' : 'ask',
       reason: {

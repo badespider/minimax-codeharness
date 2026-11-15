@@ -744,7 +744,7 @@ test('verification does not attribute an enclosing repository revision to a nest
 });
 
 test('verification fails closed if the checkout path cannot be canonicalized', t => {
-  const f = verificationFixture(t);
+  const f = verificationFixture(t, { alias: true });
   const git = (...args) => spawnSync('git', args, { cwd: f.root, encoding: 'utf8' });
   assert.equal(git('init', '-q').status, 0);
   writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
@@ -753,17 +753,17 @@ test('verification fails closed if the checkout path cannot be canonicalized', t
   const preload = path.join(f.directory, 'deny-realpath.cjs');
   writeFileSync(preload, `
     const fs = require('node:fs');
-    const path = require('node:path');
     const original = fs.realpathSync.native;
-    const target = ${JSON.stringify(path.resolve(f.root))};
+    const target = original(${JSON.stringify(path.resolve(f.root))});
     fs.realpathSync.native = (value, ...args) => {
       const compare = (item) => process.platform === 'win32' ? item.toLowerCase() : item;
-      if (compare(path.resolve(value)) === compare(target)) {
+      const resolved = original(value, ...args);
+      if (typeof resolved === 'string' && compare(resolved) === compare(target)) {
         const error = new Error('fixture canonicalization denied');
         error.code = 'EACCES';
         throw error;
       }
-      return original(value, ...args);
+      return resolved;
     };
     require('node:module').syncBuiltinESMExports();
   `);

@@ -137,21 +137,35 @@ function run(step) {
 }
 
 const started = performance.now();
-const revision = spawnSync("git", ["rev-parse", "HEAD"], {
-  cwd: root,
-  encoding: "utf8",
-});
+// Observe the working tree at the start and end. These Git status snapshots do
+// not inspect ignored files or detect changes that occur and are undone between
+// snapshots. Archives must not inherit an enclosing Git repository's HEAD.
+function checkoutState() {
+  const git = (args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  const top = git(["rev-parse", "--show-toplevel"]);
+  const comparable = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+  if (top.status !== 0 || comparable(path.resolve(top.stdout.trim())) !== comparable(path.resolve(root)))
+    return { state: "unavailable", revision: null };
+  const head = git(["rev-parse", "HEAD"]);
+  const status = git(["status", "--porcelain", "--untracked-files=all"]);
+  if (head.status !== 0 || status.status !== 0 || !/^[a-f0-9]{40}$/u.test(head.stdout.trim()))
+    return { state: "unavailable", revision: null };
+  return { state: status.stdout ? "dirty" : "clean", revision: head.stdout.trim() };
+}
+const initialCheckout = profile === "archive" ? null : checkoutState();
+const archiveRevision = /^[a-f0-9]{40}$/u.test(process.env.MCODE_VERIFY_REVISION ?? "")
+  ? process.env.MCODE_VERIFY_REVISION
+  : null;
 const report = {
   schemaVersion: 1,
-  // The candidate workflow authenticates its receipt before running this
-  // profile in a source-only directory that deliberately contains no .git.
-  revision:
-    revision.status === 0
-      ? revision.stdout.trim()
-      : profile === "archive" &&
-          /^[a-f0-9]{40}$/u.test(process.env.MCODE_VERIFY_REVISION ?? "")
-        ? process.env.MCODE_VERIFY_REVISION
-        : null,
+  // The candidate workflow authenticates its receipt separately; this runner
+  // itself does not authenticate a revision supplied by its caller.
+  revision: profile === "archive" ? archiveRevision : null,
+  revisionSource: profile === "archive" && archiveRevision ? "caller-supplied-unverified" : "unavailable",
+  checkout: initialCheckout ? { initial: initialCheckout.state, final: null } : null,
+  checkoutObservation: initialCheckout
+    ? "Git status snapshots at start and end; ignored files and intermediate changes are not checked."
+    : null,
   platform: process.platform,
   arch: process.arch,
   node: process.version,
@@ -182,6 +196,11 @@ function summary() {
     "",
     `${report.platform}/${report.arch}, Node ${report.node}, profile ${profile}`,
     `Revision: ${report.revision ?? "unavailable"}`,
+    `Revision source: ${report.revisionSource}`,
+    ...(report.checkout ? [
+      `Checkout snapshots: ${report.checkout.initial} → ${report.checkout.final ?? "pending"}`,
+      report.checkoutObservation,
+    ] : []),
     `Elapsed: ${(report.durationMs / 1000).toFixed(1)}s`,
     "",
     "| Gate | Result | Seconds | Detail |",
@@ -235,6 +254,15 @@ try {
   report.status = failed ? "FAIL" : "PASS";
 } finally {
   rmSync(temporary, { recursive: true, force: true });
+  if (initialCheckout) {
+    const finalCheckout = checkoutState();
+    report.checkout.final = finalCheckout.state;
+    if (initialCheckout.state === "clean" && finalCheckout.state === "clean" &&
+        initialCheckout.revision === finalCheckout.revision) {
+      report.revision = initialCheckout.revision;
+      report.revisionSource = "git-status-snapshots";
+    }
+  }
   for (const gate of report.gates)
     if (gate.status === "NOT_RUN")
       gate.reason = "verification stopped before this gate";

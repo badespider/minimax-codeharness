@@ -56,6 +56,8 @@ Adding a verification gate: add a step to `scripts/verify.mjs`, with `platforms`
 
 `pnpm verify` runs the same gates as CI in the same order; `pnpm verify --list` shows which apply on the current platform. Run it before opening a pull request. Individual gates such as `pnpm typecheck`, `pnpm build`, and `pnpm test:byok` remain available for iteration.
 
+Use [the feature map](docs/feature-map.md) to locate the user-facing behavior, owning code, and existing checks for a change. Verify the affected entry point and observable outcome, not only a helper in isolation. Report the commands and results, runtime evidence if collected, and any untested platforms, providers, or services. Do not describe a mock or an offline test as live-service verification.
+
 The full profile is the local default. `platform` omits only duplicate type checking. Use `pnpm verify --profile docs` only when every changed path qualifies under `scripts/ci-changes.mjs`; it runs source inventory, generated-path, source-export, and release-tool checks. `AGENTS.md`, bundled runtime prompts, and `release/` changes do not qualify for that profile. `archive` skips Git export for source archives; the candidate workflow authenticates the archive before invoking it. Keep profile selection in the shared verifier.
 
 Source export reads committed `HEAD` and rejects uncommitted tracked changes. During editing, run the relevant individual gates; run the complete applicable profile on the reviewed commit with a clean tracked working tree before opening a PR. Report the checks actually run and any blocked or untested boundaries. Offline tests do not establish live-service or cross-platform acceptance.

@@ -671,6 +671,7 @@ function verificationFixture(t) {
     const report = JSON.parse(fs.readFileSync(path.join(process.env.MCODE_VERIFY_REPORT_DIR, 'verification.json')));
     if (report.status !== 'RUNNING' || report.gates.find(g => g.name === gate)?.status !== 'RUNNING') process.exit(99);
     console.log('FIXTURE_OUTPUT_MUST_NOT_BE_UPLOADED');
+    if (gate === process.env.VERIFY_FIXTURE_TOUCH) fs.writeFileSync(path.join(process.cwd(), 'tracked.txt'), 'changed during verification');
     if (gate === process.env.VERIFY_FIXTURE_FAIL) process.exit(17);
   `);
   const exportRecord = path.join(directory, 'export-path.txt');
@@ -693,15 +694,58 @@ function verificationFixture(t) {
         GITHUB_STEP_SUMMARY: summaryPath,
         VERIFY_FIXTURE_EXPORT: exportRecord,
         VERIFY_FIXTURE_FAIL: '',
+        VERIFY_FIXTURE_TOUCH: '',
         ...env,
       },
     });
   }
   return {
-    run, exportRecord, reportDir, summaryPath,
+    root, run, exportRecord, reportDir, summaryPath,
     report: () => JSON.parse(readFileSync(path.join(reportDir, 'verification.json'), 'utf8')),
   };
 }
+
+test('verification attributes a revision only when checkout checkpoints are clean', t => {
+  const f = verificationFixture(t);
+  const git = (...args) => spawnSync('git', args, { cwd: f.root, encoding: 'utf8' });
+  assert.equal(git('init', '-q').status, 0);
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
+  assert.equal(git('add', '.').status, 0);
+  const commit = git('-c', 'user.name=Verification Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture');
+  assert.equal(commit.status, 0, commit.stderr);
+  const revision = git('rev-parse', 'HEAD').stdout.trim();
+
+  assert.equal(f.run(['--profile', 'docs']).status, 0);
+  assert.equal(f.report().revision, revision);
+  assert.equal(f.report().revisionSource, 'git-status-snapshots');
+  assert.deepEqual(f.report().checkout, { initial: 'clean', final: 'clean' });
+  assert.match(f.report().checkoutObservation, /ignored files and intermediate changes are not checked/);
+
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'uncommitted change');
+  assert.equal(f.run(['--profile', 'docs']).status, 0);
+  assert.equal(f.report().revision, null);
+  assert.equal(f.report().revisionSource, 'unavailable');
+  assert.deepEqual(f.report().checkout, { initial: 'dirty', final: 'dirty' });
+
+  writeFileSync(path.join(f.root, 'tracked.txt'), 'original');
+  const untracked = path.join(f.root, 'new-input.txt');
+  writeFileSync(untracked, 'untracked input');
+  assert.equal(f.run(['--profile', 'docs']).status, 0);
+  assert.equal(f.report().revision, null);
+  assert.deepEqual(f.report().checkout, { initial: 'dirty', final: 'dirty' });
+  rmSync(untracked);
+
+  assert.equal(f.run(['--profile', 'docs'], { VERIFY_FIXTURE_TOUCH: 'check:source' }).status, 0);
+  assert.equal(f.report().revision, null);
+  assert.deepEqual(f.report().checkout, { initial: 'clean', final: 'dirty' });
+
+  const archiveRevision = 'a'.repeat(40);
+  assert.equal(f.run(['--profile', 'archive'], { MCODE_VERIFY_REVISION: archiveRevision, VERIFY_FIXTURE_FAIL: 'check:source' }).status, 1);
+  assert.equal(f.report().revision, archiveRevision);
+  assert.equal(f.report().revisionSource, 'caller-supplied-unverified');
+  assert.equal(f.report().checkout, null);
+  assert.match(readFileSync(path.join(f.reportDir, 'verification.md'), 'utf8'), /Revision source: caller-supplied-unverified/);
+});
 
 test('platform verification omits only the compiler gate and invalid profiles fail closed', t => {
   const f = verificationFixture(t);

@@ -621,7 +621,7 @@ test(
 );
 
 test(
-  "lightweight mode stops safely when a provider emits an unoffered tool call",
+  "lightweight mode omits workspace instructions and rejects unoffered tool calls",
   { timeout: 45000 },
   async (t) => {
     const fixtureDir = mkdtempSync(path.join(tmpdir(), "minimax-code-lightweight-tool-"));
@@ -631,6 +631,8 @@ test(
     for (const dir of [dataDir, workspaceDir, homeDir]) mkdirSync(dir);
     const networkAudit = path.join(fixtureDir, "network-audit.log");
     const marker = path.join(workspaceDir, "must-not-exist.txt");
+    const workspaceInstruction = "WORKSPACE_INSTRUCTION_MUST_NOT_REACH_LIGHTWEIGHT_PROVIDER";
+    writeFileSync(path.join(workspaceDir, "AGENTS.md"), workspaceInstruction);
     let streamRequests = 0;
     const server = createServer(async (req, res) => {
       let raw = "";
@@ -644,6 +646,11 @@ test(
       }
       assert.equal(body.stream, true);
       assert.equal(body.tools, undefined, "Lightweight requests must not offer tools");
+      assert.equal(
+        JSON.stringify(body).includes(workspaceInstruction),
+        false,
+        "Lightweight requests must not include workspace instructions",
+      );
       streamRequests += 1;
       res.writeHead(200, { "content-type": "text/event-stream" });
       for (const chunk of [

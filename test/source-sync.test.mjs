@@ -1050,6 +1050,7 @@ test('Windows contract profile selects focused gates', () => {
       'check:standalone',
       'test:artifact',
       'test:windows',
+      'test:siwc-windows',
     ]);
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -20,6 +20,7 @@ function createReadinessCommandFlow(options: {
   whenControllerReady?: () => Promise<void>;
   showHelp?: () => void | Promise<void>;
   showChangelog?: () => void | Promise<void>;
+  showModelPicker?: (query: string) => void | Promise<void>;
   showTasks?: () => void | Promise<void>;
   showStatusLine?: () => void;
   showAccountStatus?: () => void | Promise<void>;
@@ -56,6 +57,7 @@ function createReadinessCommandFlow(options: {
       skillCommands: () => [],
       showAccountStatus: options.showAccountStatus ?? vi.fn(),
       showChangelog: options.showChangelog ?? vi.fn(),
+      showModelPicker: options.showModelPicker ?? vi.fn(),
       copyLastAssistantReply: options.copyLastAssistantReply ?? vi.fn(),
       exportCurrentTranscript: options.exportCurrentTranscript ?? vi.fn(),
     } as never,
@@ -95,6 +97,17 @@ function createReadinessCommandFlow(options: {
 }
 
 describe("TuiCommandFlow", () => {
+  it("offers /effort and opens the current model picker without searching or submitting a prompt", async () => {
+    const showModelPicker = vi.fn();
+    const append = vi.fn();
+    const flow = createReadinessCommandFlow({ whenReady: async () => undefined, showModelPicker, append });
+    expect(flow.catalog.inputCommands.some((command) => command.name === 'effort')).toBe(true);
+    await expect(flow.submit('/effort')).resolves.toBe('consumed');
+    expect(showModelPicker).toHaveBeenCalledExactlyOnceWith('');
+    await expect(flow.submit('/effort high')).resolves.toBe('consumed');
+    expect(showModelPicker).toHaveBeenCalledTimes(1);
+    expect(append).toHaveBeenCalledWith(expect.stringContaining('without arguments'));
+  });
   it("opens /statusline locally without waiting for hydration or submitting a model turn", async () => {
     const showStatusLine = vi.fn();
     const whenReady = vi.fn(() => new Promise<void>(() => undefined));

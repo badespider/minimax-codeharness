@@ -1424,6 +1424,13 @@ export class TuiCommandFlow {
         this.options.onChanged();
       },
       model: async ({ args }) => this.options.featureFlow.showModelPicker(args),
+      effort: async ({ args }) => {
+        if (args.trim()) {
+          this.options.append('Run /effort without arguments, then use ←/→ to choose a level and Enter to apply it.');
+          return;
+        }
+        await this.options.featureFlow.showModelPicker('');
+      },
       provider: async () => this.options.featureFlow.showProviderManager(),
       plugins: async ({ args }) => this.options.featureFlow.showPlugins(args),
       skills: async ({ args }) => this.options.featureFlow.showSkills(args),

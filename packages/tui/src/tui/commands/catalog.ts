@@ -422,6 +422,12 @@ const COMMAND_SOURCES: readonly TuiCommandSource[] = [
     argumentHint: '[filter]',
   },
   {
+    name: 'effort',
+    description: 'Change the current model’s reasoning effort',
+    category: 'Runtime',
+    argumentHint: '[choose in menu]',
+  },
+  {
     name: 'provider',
     description: 'View providers and edit MiniMax credentials',
     category: 'Runtime',

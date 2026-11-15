@@ -31,7 +31,7 @@ Give a blinking pocket pet a focus timer. Then ask: “Make pause a long press, 
 
 ## Set up this fork on Windows
 
-This fork adds an experimental ChatGPT-plan connection, cross-project Auto workflow skills, and an effort control. The official installation commands in [Quick start](#quick-start) install the upstream CLI, not this fork.
+This fork adds an experimental ChatGPT-plan connection, cross-project workflow skills for Auto and Full access, and an effort control. The official installation commands in [Quick start](#quick-start) install the upstream CLI, not this fork.
 
 Open PowerShell on Windows and run this setup command:
 
@@ -53,7 +53,7 @@ mcode-chatgpt
 
 On first use, sign in in the browser with the ChatGPT account whose plan you want to use and approve the separate MiniMax connection. Your Codex login remains separate. OpenAI determines plan and account eligibility; this connection is experimental and currently Windows-only. See [ChatGPT plan connection](docs/chatgpt-plan-experimental.md) for account and troubleshooting details.
 
-Inside MiniMax, use `/permission auto` to select Auto, `/skills` to view the installed skills, and `/effort` to change the current model's reasoning effort. Auto directs the agent to select applicable skills, run relevant tests and review changes; it is model-driven, so verify the final report, and some commands may still require approval.
+Inside MiniMax, use `/permission auto` or `/permission full` to select the permission mode, `/skills` to view the installed skills, and `/effort` to change the current model's reasoning effort. In both Auto and Full access, the workflow asks the agent to select applicable skills, run relevant tests and review changes. The workflow is model-directed, so verify the final report. Auto may request approval; Full access is designed to run without confirmation and grants broader access.
 
 ## Quick start
 

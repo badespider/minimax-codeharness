@@ -1,6 +1,6 @@
 # Auto workflow across projects
 
-This fork can load a profile-wide workflow that asks the agent to select relevant skills, verify changes, run applicable tests, and review its work when the permission mode is Auto. The workflow lives in the selected MiniMax data directory and applies to projects opened with that profile. It does not copy a project's instructions or change that project's files during installation.
+This fork can load a profile-wide workflow that asks the agent to select relevant skills, verify changes, run applicable tests, and review its work when the permission mode is Auto or Full access. The workflow lives in the selected MiniMax data directory and applies to projects opened with that profile. It does not copy a project's instructions or change that project's files during installation.
 
 ## Set up another computer
 
@@ -18,7 +18,7 @@ This fork can load a profile-wide workflow that asks the agent to select relevan
    ```
 
    On Windows, use a Windows path in place of `/path/to/minimax-profile`. See [Accounts and data](installation.md#accounts-and-data) to identify the directory used by your launcher. Install separately for each profile you want to use.
-3. Start a new session using the fork's build, then use `/permission auto` to select Auto and `/permission status` to confirm it. Use `/skills` to check that the four skills below are available. Existing sessions need to be restarted to load the updated runtime and profile instructions.
+3. Start a new session using the fork's build, then use `/permission auto` for Auto or `/permission full` for Full access. Use `/permission status` to confirm the mode and `/skills` to check that the four skills below are available. Existing sessions need to be restarted to load the updated runtime and profile instructions.
 
 The installer copies profile-wide `AGENTS.md` and four skills: `verify-project`, `interrogate-change`, `correct-repeated-failures`, and `model-project-state`. It preserves identical files on repeated runs. If an existing destination differs, it reports a conflict and stops without overwriting it.
 
@@ -30,10 +30,14 @@ node scripts/install-auto-workflow.mjs --skills-only
 
 Add `--data-dir /path/to/minimax-profile` if the profile is not selected by your environment. If an existing skill with the same name differs, the skills-only install also stops without overwriting anything; review both versions before deciding how to combine them, and manually copy any remaining skills you want. Project-specific instructions still apply, and a project-local skill with the same name takes precedence over the profile-wide skill in that project.
 
-## What Auto does
+If you installed an older Auto-only version, your existing `AGENTS.md` differs from the new template, so the installer will preserve it and report a conflict. To enable the workflow in Full access, update the workflow section in your profile instructions using the new template. Preserve any personal instructions and merge them rather than replacing the file.
 
-Auto is a permission mode. The fork reports the current mode to the agent, and the profile instructions ask it to use the workflow while that mode is active. The agent should choose skills and checks for the actual task, run relevant project tests and verify changed behavior when feasible, review its changes, and report failures or checks it could not run. Read-only work does not need unrelated tests.
+## What Auto and Full access do
 
-This is model-directed guidance, not a guaranteed enforcement gate: an agent can miss a step, a project may lack tests, and commands can still require approval. In particular, MiniMax may ask for confirmation when its permission classifier is unavailable. The workflow does not grant permission for external writes or paid requests. Lightweight mode intentionally omits normal project instructions and skills, so use a standard session for this workflow.
+Auto and Full access are permission modes. The fork reports the current mode to the agent, and the profile instructions ask it to use the workflow in either mode. The agent should choose skills and checks for the actual task, run relevant project tests and verify changed behavior when feasible, review its changes, and report failures or checks it could not run. Read-only work does not need unrelated tests.
+
+The workflow is the same in both modes; their permission behavior differs. Auto may ask for confirmation when it considers an action risky or its classifier is unavailable. Full access is designed to run without confirmation and grants broader access, so select it only when you trust the project and intended work.
+
+This is model-directed guidance, not a guaranteed enforcement gate: an agent can miss a step or a project may lack tests. The workflow itself does not grant permission for external writes or paid requests. Lightweight mode intentionally omits normal project instructions and skills, so use a standard session for this workflow.
 
 The installer copies instructions and skills only. It does not copy credentials, logins, model configuration, project data, or the `mcode-chatgpt` shortcut from another computer. To use a ChatGPT plan with this fork, see [the separate experimental ChatGPT connection](chatgpt-plan-experimental.md); that connection currently supports Windows and requires separate account-owner authorization on the new computer.

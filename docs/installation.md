@@ -94,7 +94,7 @@ To locate data safely:
 
 For tests, explicitly set `MINIMAX_DATA_DIR` to a temporary directory to keep normal sessions separate. Use `$env:MINIMAX_DATA_DIR = 'C:\path\to\test-profile'` in PowerShell or `export MINIMAX_DATA_DIR=/path/to/test-profile` in a POSIX shell.
 
-To install the fork's profile-wide skills and Auto-mode verification workflow for use across projects, see [Auto workflow across projects](auto-workflow.md).
+To install the fork's profile-wide skills and verification workflow for Auto and Full access across projects, see [Auto workflow across projects](auto-workflow.md).
 
 ## macOS terminal shortcuts: Ghostty Option+M
 

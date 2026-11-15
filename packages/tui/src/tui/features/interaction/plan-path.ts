@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { isAbsolute, sep } from 'node:path';
+import { isAbsolute, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getCapabilities, hyperlink } from '../../engine/public.js';
 import { sanitizeTerminalText } from '../../rendering/terminal-text.js';
@@ -20,7 +20,7 @@ export function formatPlanPath(
   const clean = sanitizeTerminalText(path).trim();
   if (platform === 'win32' || !home) return clean;
   if (clean === home) return '~';
-  return clean.startsWith(`${home}${sep}`) ? `~${clean.slice(home.length)}` : clean;
+  return clean.startsWith(`${home}${posix.sep}`) ? `~${clean.slice(home.length)}` : clean;
 }
 
 /**

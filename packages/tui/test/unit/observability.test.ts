@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import {
   createTuiObservability,
   resolveTuiObservabilityDirectory,
@@ -90,9 +90,9 @@ describe('Minimax Code observability', () => {
     });
     await observability.flush();
 
-    expect(resolveTuiObservabilityDirectory('/data')).toBe('/data/v2/observability/mcode');
+    expect(resolveTuiObservabilityDirectory('/data')).toBe(join('/data', 'v2', 'observability', 'mcode'));
     expect(writes).toHaveLength(1);
-    expect(writes[0]?.path).toBe('/data/v2/observability/mcode/mcode-observability-900-42.jsonl');
+    expect(writes[0]?.path).toBe(join('/data', 'v2', 'observability', 'mcode', 'mcode-observability-900-42.jsonl'));
     const events = writes
       .flatMap((write) => write.content.trim().split('\n'))
       .map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -263,7 +263,7 @@ describe('Minimax Code observability', () => {
       await vi.advanceTimersByTimeAsync(1_000);
 
       expect(append).toHaveBeenCalledWith(
-        expect.stringContaining('/v2/observability/mcode/'),
+        expect.stringContaining(`${join('v2', 'observability', 'mcode')}${sep}`),
         expect.stringContaining('"phase":"runtime.initialize"'),
       );
       await observability.flush();

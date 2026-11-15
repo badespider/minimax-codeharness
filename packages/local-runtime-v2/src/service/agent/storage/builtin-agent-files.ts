@@ -196,18 +196,40 @@ export class BuiltinAgentFiles {
   }
 }
 
-/** Reads raw bytes without following a linked agent.md out of the Agent directory. */
+/** Reads raw bytes, rejecting links and observed source identity changes. */
 async function readRegularFileBytes(filePath: string): Promise<Buffer> {
+  // O_NOFOLLOW is not available on every platform. Path and handle snapshots
+  // catch linked sources and many replacements, but are not an atomic no-follow
+  // guarantee on platforms without O_NOFOLLOW.
+  const before = await lstat(filePath);
+  if (before.isSymbolicLink() || !before.isFile()) {
+    throw new AgentConfigError(
+      'AGENT_CONFIG_INVALID',
+      'agent.md',
+      'Agent configuration must be a regular file.',
+    );
+  }
   const handle = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
   try {
-    if (!(await handle.stat()).isFile()) {
+    const opened = await handle.stat();
+    const sameFile = (other: typeof before) =>
+      before.dev === other.dev && before.ino === other.ino &&
+      before.size === other.size && before.mtimeMs === other.mtimeMs;
+    if (!opened.isFile() || !sameFile(opened)) {
       throw new AgentConfigError(
         'AGENT_CONFIG_INVALID',
         'agent.md',
         'Agent configuration must be a regular file.',
       );
     }
-    return await handle.readFile();
+    const contents = await handle.readFile();
+    const afterHandle = await handle.stat();
+    const afterPath = await lstat(filePath);
+    if (afterPath.isSymbolicLink() || !afterPath.isFile() ||
+        !sameFile(afterHandle) || !sameFile(afterPath)) {
+      throw new AgentConfigRevisionConflictError();
+    }
+    return contents;
   } finally {
     await handle.close();
   }

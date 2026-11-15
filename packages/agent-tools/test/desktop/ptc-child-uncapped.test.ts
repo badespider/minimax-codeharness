@@ -255,7 +255,11 @@ describe('bash child calls', () => {
   });
 
   function nodeCommand(script: string): string {
-    return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+    const encoded = Buffer.from(script, 'utf8').toString('base64');
+    const expression = `eval(Buffer.from("${encoded}","base64").toString("utf8"))`;
+    return process.platform === 'win32'
+      ? `& '${process.execPath.replace(/'/g, "''")}' -e '${expression}'; exit $LASTEXITCODE`
+      : `'${process.execPath.replace(/'/g, "'\\''")}' -e '${expression}'`;
   }
 
   it('reads the whole output back from the full-output file, reported complete', async () => {

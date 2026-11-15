@@ -147,7 +147,7 @@ describe("WSL attachment paths", () => {
     },
   );
 
-  it("keeps native attachment resolution working in WSL without a subprocess", async () => {
+  it.skipIf(skipWslConversion)("keeps native attachment resolution working in WSL without a subprocess", async () => {
     await expect(
       resolveTuiAttachment("截图.png", { workspaceDir }),
     ).resolves.toMatchObject({ filePath: imagePath });
@@ -157,6 +157,14 @@ describe("WSL attachment paths", () => {
         homeDir: workspaceDir,
       }),
     ).resolves.toMatchObject({ filePath: imagePath });
+    expect(host.executeFile).not.toHaveBeenCalled();
+  });
+
+  it("resolves a native attachment on the actual host without wslpath", async () => {
+    host.platform.mockReturnValue(process.platform);
+    host.release.mockReturnValue("generic-kernel");
+    await expect(resolveTuiAttachment("截图.png", { workspaceDir }))
+      .resolves.toMatchObject({ filePath: imagePath });
     expect(host.executeFile).not.toHaveBeenCalled();
   });
 

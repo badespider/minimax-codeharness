@@ -35,6 +35,16 @@ const SESSION_CTX = {
   turnId: 'turn-test',
 } satisfies LocalRuntimeToolContext;
 
+// Pass JS as base64 so the default PowerShell and POSIX shells interpret the
+// same program, including paths containing spaces and shell metacharacters.
+function nodeCommand(script: string): string {
+  const encoded = Buffer.from(script, 'utf8').toString('base64');
+  const expression = `eval(Buffer.from("${encoded}","base64").toString("utf8"))`;
+  return process.platform === 'win32'
+    ? `& '${process.execPath.replace(/'/g, "''")}' -e '${expression}'; exit $LASTEXITCODE`
+    : `'${process.execPath.replace(/'/g, "'\\''")}' -e '${expression}'`;
+}
+
 describe('LocalBashTool — foreground output truncation', () => {
   let workspace: string;
 
@@ -49,7 +59,7 @@ describe('LocalBashTool — foreground output truncation', () => {
   it('preserves exact stdout and stderr for Compatible PostToolUse', async () => {
     const tool = new LocalBashTool(workspace, undefined, { mode: 'off' });
     const result = await tool.execute(SESSION_CTX, {
-      command: "printf 'from-stdout'; printf 'from-stderr' >&2",
+      command: nodeCommand("process.stdout.write('from-stdout'); process.stderr.write('from-stderr')"),
     });
 
     expect(readPluginHookCompatibleToolResponse(result)).toEqual({
@@ -61,7 +71,7 @@ describe('LocalBashTool — foreground output truncation', () => {
 
   it('short output is returned verbatim, not truncated', async () => {
     const tool = new LocalBashTool(workspace, undefined, { mode: 'off' });
-    const result = await tool.execute(SESSION_CTX, { command: 'printf "a\\nb\\nc\\n"' });
+    const result = await tool.execute(SESSION_CTX, { command: nodeCommand("process.stdout.write('a\\nb\\nc\\n')") });
     expect(result.tool_name).toBe('bash');
     expect(result.isError).toBeFalsy();
     expect(result.text).toContain('a');
@@ -71,7 +81,7 @@ describe('LocalBashTool — foreground output truncation', () => {
   it('caps 24-50 KiB foreground output with head and tail and persists the complete output', async () => {
     const tool = new LocalBashTool(workspace, undefined, { mode: 'off' });
     const script = `for(let i=0;i<400;i++) console.log('row-'+i+'-'+'x'.repeat(90))`;
-    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+    const command = nodeCommand(script);
     const result = await tool.execute(SESSION_CTX, { command });
 
     expect(Buffer.byteLength(result.text, 'utf8')).toBeLessThanOrEqual(
@@ -145,7 +155,7 @@ describe('LocalBashTool — foreground output truncation', () => {
     const tool = new LocalBashTool(workspace, undefined, { mode: 'off' });
     // Let pending stderr writes drain before exiting with the intended error code.
     const script = `for(let i=0;i<400;i++) console.error('error-row-'+i+'-'+'e'.repeat(90)); process.exitCode = 7`;
-    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+    const command = nodeCommand(script);
     const result = await tool.execute(SESSION_CTX, { command });
 
     expect(result.isError).toBe(true);
@@ -175,7 +185,7 @@ describe('LocalBashTool — foreground output truncation', () => {
   it('output beyond 2000 lines preserves head and tail with a complete output file', async () => {
     const tool = new LocalBashTool(workspace, undefined, { mode: 'off' });
     const script = `for(let i=0;i<3000;i++) console.log('spill-row-'+i+'-'+'z'.repeat(50))`;
-    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+    const command = nodeCommand(script);
     const result = await tool.execute(SESSION_CTX, { command });
 
     const lower = result.text.toLowerCase();

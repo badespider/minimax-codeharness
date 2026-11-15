@@ -134,7 +134,9 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), ${JSON
     },
   );
 
-  it('pins npm-prefix updates to the receipt Node across Homebrew-style upgrades', async () => {
+  // These fixtures exercise POSIX launchers, /lib/node_modules and Homebrew's
+  // symlink layout; Windows npm-prefix behavior is exercised by the tests above.
+  it.skipIf(process.platform === 'win32')('pins npm-prefix updates to the receipt Node across Homebrew-style upgrades', async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'mcode-update-runtime-'));
     roots.push(root);
     const prefix = path.join(root, 'install');
@@ -231,7 +233,7 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), 'modul
     expect(missing.stderr.toString()).toMatch(/re-run the MCode installer/u);
   });
 
-  it('heals receipts pinned to a Homebrew Cellar keg via the stable opt path', async () => {
+  it.skipIf(process.platform === 'win32')('heals receipts pinned to a Homebrew Cellar keg via the stable opt path', async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), 'mcode-update-runtime-'));
     roots.push(root);
     const brewRoot = path.join(root, 'homebrew');
@@ -258,7 +260,7 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), 'modul
     const result = await runNpmPrefixUpdate(root, path.join(root, 'removed', 'bin', 'node'));
     expect(result.outcome).toMatchObject({ applied: true });
     expect(result.receiptNode).toBe(process.execPath);
-    expect(result.launcher).toContain(`node='${process.execPath}'`);
+    expect(result.launcher).toContain(process.platform === 'win32' ? `"${process.execPath}"` : `node='${process.execPath}'`);
   });
 
   it('ignores unusable receipt Node executables and legacy receipts', () => {
@@ -267,13 +269,13 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), 'modul
     const npm = path.join(root, 'npm');
     writeFileSync(npm, '#!/bin/sh\nexit 42\n', { mode: 0o755 });
     const prefix = path.join(root, 'install');
-    const legacyEntry = path.join(prefix, 'lib', 'node_modules', '@minimax-ai', 'code', 'cli.js');
+    const modules = process.platform === 'win32' ? ['node_modules'] : ['lib', 'node_modules'];
+    const legacyEntry = path.join(prefix, ...modules, '@minimax-ai', 'code', 'cli.js');
     const versionedEntry = path.join(
       prefix,
       'releases',
       '1.0.0',
-      'lib',
-      'node_modules',
+      ...modules,
       '@minimax-ai',
       'code',
       'cli.js',
@@ -332,14 +334,39 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), 'modul
     const legacyInstall = resolveMcodeNpmPrefixInstall(legacyEntry);
     expect(legacyInstall).toBeDefined();
     expect(legacyInstall?.nodeExecutable).toBeUndefined();
+  });
 
+  it.skipIf(process.platform === 'win32')('preserves a valid Homebrew opt Node executable in the receipt', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'mcode-update-runtime-'));
+    roots.push(root);
+    const npm = path.join(root, 'npm');
+    writeFileSync(npm, '#!/bin/sh\nexit 42\n', { mode: 0o755 });
+    const prefix = path.join(root, 'install');
+    const versionedEntry = path.join(prefix, 'releases', '1.0.0', 'lib', 'node_modules', '@minimax-ai', 'code', 'cli.js');
+    mkdirSync(path.dirname(versionedEntry), { recursive: true });
+    writeFileSync(path.join(path.dirname(versionedEntry), 'package.json'), JSON.stringify({ name: '@minimax-ai/code', version: '1.0.0' }));
+    writeFileSync(versionedEntry, 'console.log("1.0.0");');
     const brewRoot = path.join(root, 'homebrew');
     const kegNode = path.join(brewRoot, 'Cellar', 'node', '26.7.0', 'bin', 'node');
     placeNodeBinaryAt(kegNode);
     const optLink = path.join(brewRoot, 'opt', 'node');
     mkdirSync(path.dirname(optLink), { recursive: true });
     symlinkSync(path.join(brewRoot, 'Cellar', 'node', '26.7.0'), optLink);
-    writeReceipt({ nodeExecutable: path.join(optLink, 'bin', 'node') });
+    writeFileSync(path.join(prefix, 'install.json'), JSON.stringify({
+      schemaVersion: 2,
+      product: 'minimax-code',
+      updateOwner: 'npm-prefix',
+      packageManager: 'npm',
+      packageName: '@minimax-ai/code',
+      registry: 'https://registry.npmjs.org/',
+      distTag: 'latest',
+      npmExecutable: npm,
+      prefix,
+      layoutVersion: 2,
+      releasesDirectory: 'releases',
+      currentFile: 'current',
+      nodeExecutable: path.join(optLink, 'bin', 'node'),
+    }));
     expect(resolveMcodeNpmPrefixInstall(versionedEntry)?.nodeExecutable).toBe(
       path.join(optLink, 'bin', 'node'),
     );
@@ -372,8 +399,7 @@ async function runNpmPrefixUpdate(
     prefix,
     'releases',
     '1.2.3',
-    'lib',
-    'node_modules',
+    ...(process.platform === 'win32' ? ['node_modules'] : ['lib', 'node_modules']),
     '@minimax-ai',
     'code',
   );
@@ -413,7 +439,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 if (process.argv.includes('view')) { console.log(JSON.stringify('1.2.4')); process.exit(0); }
 const prefix = process.argv[process.argv.indexOf('--prefix') + 1];
-const root = path.join(prefix, 'lib/node_modules/@minimax-ai/code');
+const root = path.join(prefix, process.platform === 'win32' ? 'node_modules/@minimax-ai/code' : 'lib/node_modules/@minimax-ai/code');
 fs.mkdirSync(path.join(root, 'node_modules/better-sqlite3'), { recursive: true });
 fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({name:'@minimax-ai/code',version:'1.2.4',bin:{mcode:'cli.js','mcode-tools':'tools.js'}}));
 fs.writeFileSync(path.join(root, 'cli.js'), 'console.log("1.2.4");');
@@ -437,6 +463,6 @@ fs.writeFileSync(path.join(root, 'node_modules/better-sqlite3/index.js'), 'modul
   const receiptNode = JSON.parse(
     readFileSync(path.join(prefix, 'install.json'), 'utf8'),
   ).nodeExecutable;
-  const launcher = readFileSync(path.join(prefix, 'releases', '1.2.4', '.mcode-launcher'), 'utf8');
+  const launcher = readFileSync(path.join(prefix, 'releases', '1.2.4', process.platform === 'win32' ? '.mcode-launcher.cmd' : '.mcode-launcher'), 'utf8');
   return { prefix, receiptNode, launcher, outcome };
 }

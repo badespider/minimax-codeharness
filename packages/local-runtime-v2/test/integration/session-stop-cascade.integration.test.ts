@@ -145,6 +145,15 @@ function tool(input: ScriptedTurnInput, name: string) {
   return found;
 }
 
+/** Publishes the active shell's PID before waiting for cancellation. */
+function longRunningCommand(pidFile: string): string {
+  if (process.platform === 'win32') {
+    const quotedPath = pidFile.replace(/'/g, "''");
+    return `[System.IO.File]::WriteAllText('${quotedPath}', [string]$PID); Start-Sleep -Seconds 600`;
+  }
+  return `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`;
+}
+
 /** Starts a detached bash whose OS process outlives the Turn. */
 async function startBackgroundBash(input: ScriptedTurnInput, command: string): Promise<string> {
   const result = await tool(input, 'bash').impl.execute(
@@ -240,7 +249,7 @@ describe('session stop cascade over the production V2 host', () => {
         async (input) => {
           const bashId = await startBackgroundBash(
             input,
-            `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`,
+            longRunningCommand(pidFile),
           );
           bashTaskId.resolve(bashId);
           subagentTaskId.resolve(await startBackgroundSubagent(input, 'Run until stopped'));
@@ -431,7 +440,7 @@ describe('session stop cascade boundary after release', () => {
         // Turn 2: the user's next message, admitted while the stop still pauses the Goal.
         async (input) => {
           newTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(newPidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(newPidFile)),
           );
         },
       ];
@@ -532,7 +541,7 @@ describe('session stop cascade identity at arrival', () => {
           newTaskId.resolve(
             await startBackgroundBash(
               input,
-              `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`,
+              longRunningCommand(pidFile),
             ),
           );
           turnBReady.resolve();
@@ -836,7 +845,7 @@ describe('session stop cascade identity', () => {
         // Turn B: starts real background work and keeps running.
         async (input) => {
           bashTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(pidFile)),
           );
           await awaitAbort(input);
         },
@@ -1215,14 +1224,14 @@ describe('session stop cascade switches: subagents only', () => {
         // Turn 1 (owner): its own bash plus a background subagent.
         async (input) => {
           ownerBashTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(ownerPidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(ownerPidFile)),
           );
           subagentTaskId.resolve(await startBackgroundSubagent(input, 'Start a bash, then work'));
         },
         // Turn 2 (child Session): the subagent starts a bash of its own, then works on.
         async (input) => {
           childBashTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(childPidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(childPidFile)),
           );
           await awaitAbort(input);
         },
@@ -1292,7 +1301,7 @@ describe('session stop cascade switches: both off', () => {
       harness.scripts = [
         async (input) => {
           bashTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(pidFile)),
           );
           subagentTaskId.resolve(await startBackgroundSubagent(input, 'Work until stopped'));
         },
@@ -1359,7 +1368,7 @@ describe('session stop cascade switches: fresh read', () => {
       harness.scripts = [
         async (input) => {
           bashTaskId.resolve(
-            await startBackgroundBash(input, `echo $$ > ${JSON.stringify(pidFile)}; sleep 600`),
+            await startBackgroundBash(input, longRunningCommand(pidFile)),
           );
         },
       ];

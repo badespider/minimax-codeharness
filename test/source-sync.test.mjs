@@ -716,7 +716,19 @@ test('verification attributes a revision only when checkout checkpoints are clea
   const revision = git('rev-parse', 'HEAD').stdout.trim();
 
   assert.equal(f.run(['--profile', 'docs']).status, 0);
-  assert.equal(f.report().revision, revision);
+  const observed = f.report();
+  const top = git('rev-parse', '--show-toplevel');
+  const status = git('status', '--porcelain', '--untracked-files=all');
+  assert.equal(observed.revision, revision, JSON.stringify({
+    checkout: observed.checkout,
+    revisionSource: observed.revisionSource,
+    fixtureRoot: f.root,
+    fixtureRealPath: realpathSync.native(f.root),
+    gitTopStatus: top.status,
+    gitTop: top.stdout.trim(),
+    gitStatusStatus: status.status,
+    gitStatus: status.stdout,
+  }));
   assert.equal(f.report().revisionSource, 'git-status-snapshots');
   assert.deepEqual(f.report().checkout, { initial: 'clean', final: 'clean' });
   assert.match(f.report().checkoutObservation, /ignored files and intermediate changes are not checked/);

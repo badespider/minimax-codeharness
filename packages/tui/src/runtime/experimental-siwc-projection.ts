@@ -5,6 +5,7 @@ export interface ExperimentalSiwcModelProjection {
   readonly displayName: string;
   readonly contextWindow: number;
   readonly maxTokens: number;
+  readonly effortOptions?: readonly string[];
 }
 
 /** In-memory startup projection; never writes or mutates the saved configuration. */
@@ -13,6 +14,7 @@ export function projectExperimentalSiwcModels(config: LocalRuntimeConfig, models
   const entries = Object.fromEntries(models.map((model) => [model.slug, {
     name: model.displayName,
     limit: { context: model.contextWindow, output: model.maxTokens },
+    ...(model.effortOptions?.length ? { reasoning: true, thinking: { effortOptions: [...model.effortOptions], defaultEffort: 'medium' } } : {}),
   }]));
   return { ...config, provider: { ...config.provider, 'openai-siwc-experimental': { name: 'ChatGPT (MiniMax)', models: entries } } };
 }

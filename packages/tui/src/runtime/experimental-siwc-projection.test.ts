@@ -5,8 +5,53 @@ import { ExperimentalSiwcOwner } from '../../../local-runtime-v2/src/service/mod
 import { LocalModelResolver } from '../../../local-runtime-v2/src/service/model-system/resolution/local-model-resolver.js';
 import { resolveRequestedSessionModel } from '../../../local-runtime-v2/src/service/model-system/catalog/model-selection.js';
 import { resolveTurnModelSelection } from '../../../local-runtime-v2/src/service/turn-system/agent-host/preparation/config/session-model-selection.js';
+import { modelRefForModel } from '../../../local-runtime-v2/src/service/model-system/resolution/model-ref.js';
 
 describe('SIWC in-memory launch projection', () => {
+  it('limits effort options to documented values and rejects invalid selections', async () => {
+    const getActiveSession = async () => ({ accountKey: 'account', accessToken: 'fake-token', scopes: ['chatgpt.tokens.use.direct'] });
+    const owner = new ExperimentalSiwcOwner({ getActiveSession, withActiveTokenLease: async (_account, action) => action('fake-token', new AbortController().signal), getModelLimits: async () => ({ contextWindow: 8000, maxTokens: 1000 }), fetchImpl: async () => new Response(JSON.stringify({ models: [
+      { slug: 'gpt-6.1-sol', display_name: 'Sol', visibility: 'list' },
+      { slug: 'gpt-6.1-terra', display_name: 'Terra', visibility: 'list' },
+      { slug: 'unrecognized-model', display_name: 'Unknown', visibility: 'list' },
+    ] })) });
+    const catalog = await owner.listSelectableModels();
+    const config = projectExperimentalSiwcModels({ dataDir: '/test' }, catalog.models);
+    const models = config.provider!['openai-siwc-experimental']!.models!;
+    expect(models['gpt-6.1-sol']!.thinking?.effortOptions).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+    expect(models['gpt-6.1-terra']!.thinking?.effortOptions).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(models['unrecognized-model']!.thinking).toBeUndefined();
+    const resolver = new LocalModelResolver({ experimentalSiwc: owner.resolverProvider });
+    for (const effort of ['none', 'ultra']) {
+      const ref = { provider: 'openai-siwc-experimental', model_id: 'gpt-6.1-sol', thinking_effort: effort };
+      await expect(resolver.resolveModel({ sessionId: 's', turnId: 't', agentConfig: { agent_id: 'a', system_prompt: '', tools: [], skills: [], model: ref } })).rejects.toThrow('unsupported SIWC reasoning effort');
+    }
+  });
+  it.each([
+    ['gpt-6.1-sol', 'low'], ['gpt-6.1-sol', 'medium'], ['gpt-6.1-sol', 'high'],
+    ['gpt-6.1-sol', 'xhigh'], ['gpt-6.1-sol', 'max'], ['gpt-6.1-terra', 'none'],
+  ])('sends selected %s effort %s to the Responses API', async (slug, effort) => {
+    const requests: Request[] = [];
+    const getActiveSession = async () => ({ accountKey: 'account', accessToken: 'fake-token', scopes: ['chatgpt.tokens.use.direct'] });
+    const fetchImpl: typeof fetch = async (raw, init) => {
+      const request = new Request(raw, init);
+      if (request.url.endsWith('/models')) return new Response(JSON.stringify({ models: [{ slug, display_name: slug, visibility: 'list' }] }));
+      requests.push(request);
+      return new Response(`data: ${JSON.stringify({ type: 'response.completed', response: { id: 'r', status: 'completed', output: [] } })}\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+    };
+    const owner = new ExperimentalSiwcOwner({ getActiveSession, withActiveTokenLease: async (_account, action) => action('fake-token', new AbortController().signal), getModelLimits: async () => ({ contextWindow: 8000, maxTokens: 1000 }), fetchImpl });
+    const catalog = await owner.listSelectableModels();
+    const config = projectExperimentalSiwcModels({ dataDir: '/test' }, catalog.models);
+    const entry = config.provider!['openai-siwc-experimental']!.models![slug]!;
+    expect(entry.thinking?.effortOptions).toContain(effort);
+    const ref = modelRefForModel('openai-siwc-experimental', slug, entry, { thinking: { effort } });
+    const resolver = new LocalModelResolver({ experimentalSiwc: owner.resolverProvider });
+    const resolved = await resolver.resolveModel({ sessionId: 's', turnId: 't', agentConfig: { agent_id: 'a', system_prompt: '', tools: [], skills: [], model: ref } });
+    const stream = await resolved.streamFn!(resolved.model, { messages: [] }, { apiKey: resolved.apiKey, reasoning: resolved.thinkingLevel });
+    for await (const _ of stream) { /* drain */ }
+    expect((await stream.result()).stopReason).toBe('stop');
+    expect(await requests[0]!.json()).toMatchObject({ reasoning: { effort } });
+  });
   it('does not mutate persisted configuration or overwrite a reserved provider', () => {
     const saved = { dataDir: '/test', provider: { minimax: { models: { standard: {} } } } };
     const projected = projectExperimentalSiwcModels(saved, [{ slug: 'model', displayName: 'Model', contextWindow: 8000, maxTokens: 1000 }]);

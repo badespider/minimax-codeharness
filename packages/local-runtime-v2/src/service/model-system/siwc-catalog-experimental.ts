@@ -3,6 +3,16 @@ import { EXPERIMENTAL_SIWC_PROVIDER_ID } from './identity.js';
 
 const MODELS_URL = 'https://api.openai.com/v1/models';
 
+// Explicitly documented model capabilities; never infer them from a new slug.
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const NO_REASONING_MODELS = new Set(['gpt-6.1-terra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+const REASONING_MODELS = new Set(['gpt-6.1-sol', 'gpt-6-astra']);
+export function siwcSupportedEfforts(modelId: string): readonly string[] | undefined {
+  if (NO_REASONING_MODELS.has(modelId)) return ['none', ...EFFORTS];
+  if (REASONING_MODELS.has(modelId)) return EFFORTS;
+  return undefined;
+}
+
 export interface ExperimentalSiwcCatalogModel {
   readonly slug: string;
   readonly displayName: string;
@@ -59,12 +69,13 @@ export class ExperimentalSiwcOwner {
     return { accountKey: session.accountKey, models };
   }
 
-  async listSelectableModels(): Promise<{ readonly accountKey: string; readonly models: readonly (ExperimentalSiwcCatalogModel & { readonly contextWindow: number; readonly maxTokens: number })[] }> {
+  async listSelectableModels(): Promise<{ readonly accountKey: string; readonly models: readonly (ExperimentalSiwcCatalogModel & { readonly contextWindow: number; readonly maxTokens: number; readonly effortOptions?: readonly string[] })[] }> {
     const listing = await this.listModels();
-    const models: (ExperimentalSiwcCatalogModel & { contextWindow: number; maxTokens: number })[] = [];
+    const models: (ExperimentalSiwcCatalogModel & { contextWindow: number; maxTokens: number; effortOptions?: readonly string[] })[] = [];
     for (const model of listing.models) {
       const limits = await this.getLimits(listing.accountKey, model.slug);
-      if (limits && Number.isSafeInteger(limits.contextWindow) && limits.contextWindow > 0 && Number.isSafeInteger(limits.maxTokens) && limits.maxTokens > 0) models.push({ ...model, ...limits });
+      const effortOptions = siwcSupportedEfforts(model.slug);
+      if (limits && Number.isSafeInteger(limits.contextWindow) && limits.contextWindow > 0 && Number.isSafeInteger(limits.maxTokens) && limits.maxTokens > 0) models.push({ ...model, ...limits, ...(effortOptions ? { effortOptions } : {}) });
     }
     if ((await this.readSession()).accountKey !== listing.accountKey) throw new Error('SIWC account changed during model selection');
     return { accountKey: listing.accountKey, models };

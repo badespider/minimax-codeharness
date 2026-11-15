@@ -69,6 +69,7 @@ import { withLocalDynamicMaxTokens } from './dynamic-max-tokens.js';
 import { resolveLocalRequestBodyBytes } from './file-api-capabilities.js';
 import { resolveLocalFileApiGatewayAuth } from './file-api-gateway-auth.js';
 import { withExperimentalSiwcStream } from './siwc-stream-experimental.js';
+import { siwcSupportedEfforts } from '../siwc-catalog-experimental.js';
 
 /** Strips trailing `char` repeats in linear time (no backtracking regex). */
 function trimTrailingChar(value: string, char: string): string {
@@ -168,9 +169,15 @@ export class LocalModelResolver implements LocalModelResolverLike {
     if (!metadata || !Number.isSafeInteger(metadata.contextWindow) || metadata.contextWindow <= 0 || !Number.isSafeInteger(metadata.maxTokens) || metadata.maxTokens <= 0) {
       throw new Error('LocalModelResolver: SIWC model is unavailable for the selected account.');
     }
+    const supportedEfforts = siwcSupportedEfforts(identity.modelId);
+    const selectedEffort = identity.modelRef.thinking_effort ?? readSelectedThinkingEffort(identity.modelRef.capabilities as Record<string, unknown> | undefined);
+    if (selectedEffort && (!supportedEfforts || !supportedEfforts.includes(selectedEffort))) {
+      throw new Error('LocalModelResolver: unsupported SIWC reasoning effort.');
+    }
+    const effort = supportedEfforts ? selectedEffort ?? 'medium' : undefined;
     const resolved = this.finishResolve({
       ...identity,
-      modelRef: { ...identity.modelRef, context_window: metadata.contextWindow, max_tokens: metadata.maxTokens, capabilities: undefined },
+      modelRef: { ...identity.modelRef, context_window: metadata.contextWindow, max_tokens: metadata.maxTokens, capabilities: undefined, ...(effort ? { thinking_effort: effort } : {}) },
       sessionId: input.sessionId,
       agentConfig: input.agentConfig,
       api: 'openai-responses',
@@ -184,6 +191,7 @@ export class LocalModelResolver implements LocalModelResolverLike {
     });
     return {
       ...resolved,
+      ...(effort ? { model: { ...resolved.model, reasoning: true, thinkingLevelMap: { off: 'none', xhigh: 'xhigh', max: 'max' } }, thinkingLevel: effort === 'none' ? 'off' as const : effort as PiThinkingLevel } : {}),
       streamFn: withExperimentalSiwcStream({
         provider: EXPERIMENTAL_SIWC_PROVIDER_ID,
         ...(provider.fetchImpl ? { fetchImpl: provider.fetchImpl } : {}),

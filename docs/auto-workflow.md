@@ -4,7 +4,7 @@ This fork can load a profile-wide workflow that asks the agent to select relevan
 
 ## Set up another computer
 
-1. Clone your fork and check out a branch containing this guide. Follow the source-build steps in [Installation](installation.md), using your fork's URL instead of the upstream URL in that guide. Install the supported Node.js and pnpm versions, install dependencies, and build the fork. The upstream build does not automatically include this fork's mode signal or workflow installer.
+1. Clone your fork's `main` branch. Follow the source-build steps in [Installation](installation.md), using your fork's URL instead of the upstream URL in that guide. Install the supported Node.js and pnpm versions, install dependencies, and build the fork. The upstream build does not automatically include this fork's mode signal or workflow installer.
 2. From the repository root, install the workflow into the profile you use to launch MiniMax:
 
    ```sh

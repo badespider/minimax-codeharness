@@ -42,6 +42,7 @@ function Invoke-Checked([string] $Program, [string[]] $Arguments, [string] $Desc
     $script:steps.Add($Description)
     $source = Join-Path $env:MINIMAX_HARNESS_HOME 'source'
     if ($Description -eq 'Cloning the fork') {
+        if ($Arguments[0] -ne 'clone' -or $Arguments[1] -ne '--branch' -or $Arguments[2] -ne 'main' -or $Arguments[3] -ne '--single-branch' -or $Arguments[4] -ne 'https://github.com/badespider/minimax-codeharness.git') { throw 'Setup did not clone the fork main branch.' }
         New-Item -ItemType Directory -Path (Join-Path $source '.git'), (Join-Path $source 'scripts\\windows') -Force | Out-Null
         [IO.File]::WriteAllText((Join-Path $source 'scripts\\windows\\mcode-chatgpt.cmd'), ('@echo off' + [Environment]::NewLine + 'echo fixture launcher reached' + [Environment]::NewLine))
     }
@@ -146,6 +147,29 @@ function Find-Application([string] $Name) { if ($Name -eq 'npx.cmd') { return 'F
 function FakeGit { $global:LASTEXITCODE = 0; return 'https://github.com/someone-else/project.git' }
 try { Install-MiniMaxHarness; throw 'Expected refusal.' } catch { if ($_.Exception.Message -notmatch 'different origin') { throw } }
 `, 'origin');
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(readFileSync(marker, 'utf8'), 'do not change');
+});
+
+test('an existing feature-branch checkout is preserved', { skip: process.platform !== 'win32' }, () => {
+  const install = join(fixture, 'previous-feature-branch');
+  mkdirSync(join(install, 'source', '.git'), { recursive: true });
+  const marker = join(install, 'source', 'personal.txt');
+  writeFileSync(marker, 'do not change');
+  const r = run(`
+$env:MINIMAX_HARNESS_HOME = ${quote(install)}
+function Assert-NoCommandConflict([string] $ExpectedShim) {}
+function Require-Application([string] $Name, [string] $WingetId, [string] $Label) { if ($Name -eq 'git.exe') { return 'FakeGit' }; return 'FakeNode' }
+function Assert-NodeVersion([string] $Node) {}
+function Find-Application([string] $Name) { if ($Name -eq 'npx.cmd') { return 'FakeNpx' }; return $null }
+function FakeGit {
+    $global:LASTEXITCODE = 0
+    if ($args -contains 'get-url') { return $script:ForkUrl }
+    if ($args -contains '--show-current') { return 'feat/agent-trust-foundations' }
+    throw 'Unexpected Git operation on existing checkout.'
+}
+try { Install-MiniMaxHarness; throw 'Expected refusal.' } catch { if ($_.Exception.Message -notmatch 'not on main') { throw } }
+`, 'previous-branch');
   assert.equal(r.status, 0, r.stderr + r.stdout);
   assert.equal(readFileSync(marker, 'utf8'), 'do not change');
 });

@@ -36,12 +36,14 @@ This fork adds an experimental ChatGPT-plan connection, cross-project Auto workf
 Open PowerShell on Windows and run this setup command:
 
 ```powershell
-irm https://raw.githubusercontent.com/badespider/minimax-codeharness/feat/agent-trust-foundations/scripts/setup-windows.ps1 | iex
+irm https://raw.githubusercontent.com/badespider/minimax-codeharness/main/scripts/setup-windows.ps1 | iex
 ```
 
 The setup downloads and builds this fork, installs its Auto workflow and skills into the selected MiniMax profile, and adds `mcode-chatgpt` to your user PATH. It needs internet access. If Git or Node.js is missing, it attempts installation through Windows Package Manager (`winget`), which may request administrator approval. If `winget` is unavailable, or your existing Node.js version is unsupported, install Git and Node.js 22.19 or later in the 22.x series, or 24.2 or later through 26.x, and rerun the command. The setup uses pnpm 9.12.0, downloading it through npm if needed.
 
 If your profile already has different instructions or same-named skills, setup stops rather than overwriting them; see [Auto workflow across projects](docs/auto-workflow.md) for how to merge them.
+
+An existing installation checked out from the previous feature branch is left unchanged. If setup reports that the checkout is not on `main`, check that checkout's changes before switching it to `main`; setup does not update or reset existing checkouts or rebuild an existing build.
 
 Open a new terminal if the command is not yet on PATH. From the folder of the project you want to work on, start MiniMax with:
 

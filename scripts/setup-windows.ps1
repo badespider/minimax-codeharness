@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 # Windows bootstrap for the public fork. The checkout and launcher are owned by
 # the current user; no existing checkout, profile instruction, or command is replaced.
 $script:ForkUrl = 'https://github.com/badespider/minimax-codeharness.git'
-$script:ForkBranch = 'feat/agent-trust-foundations'
+$script:ForkBranch = 'main'
 $script:PnpmVersion = '9.12.0'
 
 function Find-Application([string] $Name) {

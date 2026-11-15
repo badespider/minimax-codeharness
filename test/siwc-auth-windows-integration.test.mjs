@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,6 +7,40 @@ import test from 'node:test';
 import { createSiwcAuthManager } from '../packages/local-runtime-v2/src/service/model-system/siwc-auth-manager.ts';
 import { WindowsChatGptProfileStore } from '../packages/local-runtime-v2/src/service/model-system/siwc-profile-storage.ts';
 import { exchangeChatGptAuthorization } from '../packages/local-runtime-v2/src/service/model-system/siwc-token.ts';
+
+test('completed loopback login exits even when another connection stalls', { timeout: 10_000 }, async () => {
+  const script = `
+    import assert from 'node:assert/strict';
+    import { connect } from 'node:net';
+    import { startChatGptCallback } from './packages/local-runtime-v2/src/service/model-system/siwc-callback.ts';
+    const login = await startChatGptCallback({ hostId: 'test-host' });
+    const port = Number(new URL(login.attempt.redirectUri).port);
+    const stalled = connect(port, '127.0.0.1');
+    await new Promise((resolve, reject) => { stalled.once('connect', resolve); stalled.once('error', reject); });
+    stalled.write('GET /incomplete HTTP/1.1\\r\\nHost: 127.0.0.1\\r\\n');
+    stalled.unref();
+    const url = new URL(login.attempt.redirectUri);
+    url.searchParams.set('state', login.attempt.state);
+    url.searchParams.set('code', 'fake-code');
+    url.searchParams.set('client_id', 'fake-client');
+    const [response, result] = await Promise.all([fetch(url), login.completion]);
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Authorization received/);
+    assert.equal(result.code, 'fake-code');
+  `;
+  const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+  let diagnostic = '';
+  child.stderr.on('data', (chunk) => { diagnostic += chunk; });
+  const timer = setTimeout(() => child.kill(), 5_000);
+  try {
+    const [code, signal] = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (exitCode, exitSignal) => resolve([exitCode, exitSignal]));
+    });
+    assert.equal(signal, null, `Sign-in child did not exit promptly: ${diagnostic}`);
+    assert.equal(code, 0, diagnostic);
+  } finally { clearTimeout(timer); }
+});
 
 test('real Windows protected store and loopback login work with a fake issuer and serialized refresh', { skip: process.platform !== 'win32', timeout: 120_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'siwc-auth-int-'));

@@ -1,4 +1,4 @@
-import { createServer } from 'node:http';
+import { createServer, type ServerResponse } from 'node:http';
 import { createChatGptAuthorizationAttempt, parseChatGptAuthorizationCallback } from './siwc-authorization.js';
 import type { ChatGptAuthorizationAttempt } from './siwc-authorization.js';
 
@@ -39,13 +39,13 @@ export async function startChatGptCallback(options: {
     const acceptedState = url.origin === new URL(attempt.redirectUri).origin && url.pathname === '/auth/callback' && states.length === 1 && states[0] === attempt.state;
     if (acceptedState && url.searchParams.has('error') && url.searchParams.getAll('error').length === 1) {
       response.writeHead(400).end('Authorization was not completed. You may close this window.');
-      finish(new Error('ChatGPT authorization was not completed.'));
+      finish(new Error('ChatGPT authorization was not completed.'), undefined, response);
       return;
     }
     try {
       const result = parseChatGptAuthorizationCallback(attempt, url.toString());
       response.writeHead(200).end('Authorization received. You may return to MiniMax Code.');
-      finish(undefined, result);
+      finish(undefined, result, response);
     } catch { response.writeHead(400).end('Invalid authorization response.'); }
   });
   server.requestTimeout = 10_000;
@@ -61,11 +61,19 @@ export async function startChatGptCallback(options: {
   catch (error) { server.close(); throw error; }
   const timeout = setTimeout(() => finish(new Error('ChatGPT authorization timed out.')), options.timeoutMs ?? 600_000);
   timeout.unref();
-  function finish(error?: Error, result?: { code: string; clientId: string }) {
+  function finish(error?: Error, result?: { code: string; clientId: string }, response?: ServerResponse) {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
     server.close();
+    // A browser can open another connection and never finish its headers.
+    // Close such connections after the callback response is flushed, so they
+    // cannot keep a completed login process alive. Cancellation has no reply.
+    if (!response || response.writableFinished) server.closeAllConnections();
+    else {
+      response.once('finish', () => server.closeAllConnections());
+      response.once('close', () => server.closeAllConnections());
+    }
     if (error) rejectCompletion(error);
     else if (result) resolveCompletion(result);
   }

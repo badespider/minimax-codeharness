@@ -72,6 +72,56 @@ describe.each(['default', 'auto', 'bypass'] as const)('bash rule precedence in %
   });
 });
 
+describe.each(['default', 'auto', 'bypass'] as const)('help command restrictions in %s mode', (mode) => {
+  describe.each(['deny', 'ask'] as const)('%s precedes help fast-allow', (behavior) => {
+    it.each([
+      'npm --help',
+      'npm\t--help',
+      "'npm' --help",
+      '"npm" --help',
+      "'npm'\t'--help'",
+      "echo ready && 'npm'\t--help",
+    ])('enforces a restrictive prefix for %s', (command) => {
+      expect(evaluateBashStatic(command, [bashRule(behavior, 'npm:*')], undefined, mode).verdict).toBe(behavior);
+    });
+
+    it('enforces a whole-tool rule', () => {
+      expect(evaluateBashStatic('npm --help', [bashRule(behavior)], undefined, mode).verdict).toBe(behavior);
+    });
+
+    it('matches quoted help flags against an exact rule', () => {
+      expect(evaluateBashStatic("npm '-?'", [bashRule(behavior, 'npm -?')], undefined, mode).verdict).toBe(behavior);
+    });
+  });
+
+  it('keeps deny stronger than ask even when the ask is listed first', () => {
+    expect(evaluateBashStatic("'npm' --help", [bashRule('ask', 'npm:*'), bashRule('deny', 'npm:*')], undefined, mode).verdict).toBe('deny');
+  });
+
+  it.each(['$CMD --help', 'npm* --help'])('asks when expansion makes matching uncertain: %s', (command) => {
+    expect(evaluateBashStatic(command, [bashRule('deny', 'npm:*')], undefined, mode).verdict).toBe('ask');
+  });
+
+  it('still denies a known restricted command with a dynamic argument', () => {
+    expect(evaluateBashStatic('npm $(printf x) --help', [bashRule('deny', 'npm:*')], undefined, mode).verdict).toBe('deny');
+  });
+
+  it('does not allow an ambiguous quoted executable with a dynamic argument', () => {
+    expect(evaluateBashStatic("'npm' $(printf x) --help", [bashRule('deny', 'npm:*')], undefined, mode).verdict).toBe('ask');
+  });
+
+  it.each(['find /; npm --help', 'npm --help; find /'])(
+    'preserves another subcommand hard denial for %s',
+    (command) => {
+      expect(evaluateBashStatic(command, [bashRule('ask', 'npm:*')], undefined, mode).verdict).toBe('deny');
+    },
+  );
+
+  it('keeps unrelated literal help requests allowed', () => {
+    expect(evaluateBashStatic('othercli --help', [bashRule('deny', 'npm:*')], undefined, mode).verdict).toBe('allow');
+  });
+});
+
 describe('permission context rule updates', () => {
   it.each(['addRules', 'replaceRules', 'removeRules'] as const)(
     '%s preserves local-script classification and the host file probe',

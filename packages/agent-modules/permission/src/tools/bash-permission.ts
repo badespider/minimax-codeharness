@@ -23,6 +23,7 @@ import {
 } from '../classifier/dangerous-patterns.js';
 import { SAFE_BASH_FIRST_WORDS, isDestructiveKillCommand } from './bash-safe-first-words.js';
 import { shellTokenize, shellTokenizeWithMetadata } from './shell-tokenize.js';
+import { parseScriptPlainCommands } from './bash-ast.js';
 import { isTempDirectory, pathInAllowedWorkingPath, pathInWorkingPath } from './fs-permission.js';
 import { hasWritten } from '../written-files-registry.js';
 import type { BashCheckContext } from './bash-context.js';
@@ -181,6 +182,30 @@ function isHelpFlagOnlyCommand(command: string): boolean {
     if (!HELP_FLAG_TOKENS.has(tok)) return false;
   }
   return true;
+}
+
+// These token forms are used only to enforce deny/ask rules, never to grant an
+// allow. Expressions that may be expanded by the shell are not normalized.
+function literalHelpRuleWords(command: string): string[] | undefined {
+  if (/[\r\n\\]/.test(command)) return undefined;
+  const commands = parseScriptPlainCommands(command);
+  if (!commands || commands.length !== 1) return undefined;
+  const words = commands[0];
+  if (!words?.length || /[\u0000-\u001f\u007f$*?\[\]~]/.test(words[0] ?? '')) return undefined;
+  return words;
+}
+
+function matchesLiteralHelpRestriction(
+  commandWords: string[],
+  rule: CompiledShellPermissionRule,
+): boolean {
+  if (rule.type === 'exact' || rule.type === 'prefix') {
+    const ruleWords = literalHelpRuleWords(rule.type === 'exact' ? rule.command : rule.prefix);
+    if (!ruleWords || ruleWords.length > commandWords.length) return false;
+    if (rule.type === 'exact' && ruleWords.length !== commandWords.length) return false;
+    return ruleWords.every((word, index) => word === commandWords[index]);
+  }
+  return matchShellRule(commandWords.join(' '), rule);
 }
 
 // Re-export so existing consumers (tests, classifier) keep their imports.
@@ -1080,7 +1105,7 @@ export function evaluateBashStatic(
   //
   // Skipped in bypass mode: the user explicitly opted in.
   // ===================================================================
-  if (mode !== 'bypass') {
+  if (mode !== 'bypass' && !compiledBashRules.some(({ rule }) => rule.ruleBehavior !== 'allow')) {
     if (isHelpFlagOnlyCommand(command)) {
       const trimmed = command.trim();
       const firstWord = trimmed.split(/\s+/)[0] ?? '';
@@ -1219,6 +1244,10 @@ function evaluateSingleSubcommand(
     !!parsedRule &&
     (matchShellRule(command, parsedRule) ||
       (!!wrapperStrippedCommand && matchShellRule(wrapperStrippedCommand, parsedRule)));
+  const helpLooking = shellTokenize(command).some((token) => HELP_FLAG_TOKENS.has(token));
+  const helpWords = helpLooking ? literalHelpRuleWords(command) : undefined;
+  const matchesRestrictiveRule = (parsedRule: CompiledShellPermissionRule | undefined): boolean =>
+    matchesUserRule(parsedRule) || (!!parsedRule && !!helpWords && matchesLiteralHelpRestriction(helpWords, parsedRule));
 
   // Step 1: user deny rule
   for (const { rule, parsedRule } of bashRules) {
@@ -1226,7 +1255,7 @@ function evaluateSingleSubcommand(
     if (!rule.ruleValue.ruleContent) {
       return logLayer('user-deny', { verdict: 'deny', reason: { type: 'rule', rule } });
     }
-    if (matchesUserRule(parsedRule)) {
+    if (matchesRestrictiveRule(parsedRule)) {
       return logLayer('user-deny', { verdict: 'deny', reason: { type: 'rule', rule } });
     }
   }
@@ -1237,7 +1266,7 @@ function evaluateSingleSubcommand(
     if (!rule.ruleValue.ruleContent) {
       return logLayer('user-ask', { verdict: 'ask', reason: { type: 'rule', rule } });
     }
-    if (matchesUserRule(parsedRule)) {
+    if (matchesRestrictiveRule(parsedRule)) {
       return logLayer('user-ask', { verdict: 'ask', reason: { type: 'rule', rule } });
     }
   }
@@ -1294,6 +1323,23 @@ function evaluateSingleSubcommand(
         description: `<system-reminder>\n${slowHit.guidance}\n</system-reminder>`,
         category: slowHit.category,
       },
+    });
+  }
+
+  if (helpLooking && !helpWords && bashRules.some(({ rule }) => rule.ruleBehavior !== 'allow')) {
+    return logLayer('ambiguous-help-rule', {
+      verdict: 'ask',
+      reason: { type: 'safetyCheck', description: 'Cannot reliably match help command to restrictive shell rules.' },
+    });
+  }
+
+  // Preserve the original whole-command fast path for unrelated restrictive
+  // rules, without granting new allowances within a compound command.
+  if (mode !== 'bypass' && bashCtx?.topLevelSegmentCount === 1 &&
+      bashRules.some(({ rule }) => rule.ruleBehavior !== 'allow') && isHelpFlagOnlyCommand(command)) {
+    return logLayer('fast-allow-help-flag', {
+      verdict: 'allow',
+      reason: { type: 'safetyCheck', description: 'Help/version flag fast-allow.', category: 'helpFlagFastAllow' },
     });
   }
 

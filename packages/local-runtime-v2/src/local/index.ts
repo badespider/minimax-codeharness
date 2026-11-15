@@ -4,6 +4,9 @@ export {
   type CliSendMessageOptions,
   type CliServiceOptions,
 } from "./cli-service.js";
+// Explicit in-process prototype only; no default CLI or configuration enables it.
+export { createExperimentalSiwcRuntime } from '../service/model-system/siwc-runtime-experimental.js';
+export { ExperimentalSiwcOwner } from '../service/model-system/siwc-catalog-experimental.js';
 export {
   PermissionReply,
   QuestionnaireSelectionMode,

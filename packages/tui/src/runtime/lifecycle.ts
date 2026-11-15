@@ -78,6 +78,9 @@ const DEFAULT_RUNTIME_SHUTDOWN_TIMEOUT_MS = 60_000;
 
 export interface CreateTuiRuntimeOptions {
   dataDir: string;
+  /** Trusted, per-process prototype injection; absent in ordinary CLI startup. */
+  experimentalSiwc?: CreateLocalRuntimeHostOptions['experimentalSiwc'];
+  experimentalSiwcModels?: readonly import('./experimental-siwc-projection.js').ExperimentalSiwcModelProjection[];
   workspaceDir: string;
   version: string;
   configPath?: string;
@@ -149,7 +152,11 @@ export async function createTuiRuntime(
   options: CreateTuiRuntimeOptions,
   dependencies: CreateTuiRuntimeDependencies = {},
 ): Promise<CreatedTuiRuntime> {
-  const getSourceConfig = dependencies.getConfig ?? getDefaultLocalRuntimeConfig;
+  const originalConfig = dependencies.getConfig ?? getDefaultLocalRuntimeConfig;
+  const projection = options.experimentalSiwcModels
+    ? (await import('./experimental-siwc-projection.js')).projectExperimentalSiwcModels
+    : undefined;
+  const getSourceConfig = () => projection ? projection(originalConfig(), options.experimentalSiwcModels!) : originalConfig();
   const configPath = options.configPath ?? join(options.dataDir, 'config.yaml');
   const browserUseToolingEnabled = readBrowserUseToolingOptIn(
     configPath,
@@ -497,6 +504,7 @@ export async function createTuiRuntime(
       createEmbeddedRuntimeHost(
         {
           ...hostOptions,
+          ...(options.experimentalSiwc ? { experimentalSiwc: options.experimentalSiwc } : {}),
           ...(browserProvider ? { browserAdapter: browserProvider } : {}),
           productCapabilities: { mcodeTools: effectiveMcodeTools },
         },

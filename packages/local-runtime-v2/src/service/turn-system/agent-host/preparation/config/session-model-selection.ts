@@ -24,6 +24,7 @@ import {
 } from '@mavis/config';
 
 import type { SessionModelSnapshot, SessionRecord } from '../../../../session-system/index.js';
+import { EXPERIMENTAL_SIWC_PROVIDER_ID } from '../../../../model-system/identity.js';
 import {
   resolveLegacyMinimaxModel,
   type ManagedModelParameterSnapshot,
@@ -123,7 +124,7 @@ export async function resolveTurnModelSelection(
   if (availability.available || shouldDeferUnavailableByokSession(selection, availability.route)) {
     return selection;
   }
-  if (selection.source !== 'session_override') {
+  if (selection.source !== 'session_override' || selection.providerId === EXPERIMENTAL_SIWC_PROVIDER_ID) {
     // Refusal branch. Logged before throwing because "the upstream was never
     // called" is otherwise only visible as an ABSENCE of a request log: the
     // route / preset / model triple here is what tells apart "the backend

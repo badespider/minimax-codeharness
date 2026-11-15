@@ -19,9 +19,12 @@ import type {
 } from './contracts.js';
 import { LocalModelProviderService } from './management/service.js';
 import { LocalModelResolver } from './resolution/local-model-resolver.js';
+import { ExperimentalSiwcOwner, type ExperimentalSiwcOwnerOptions } from './siwc-catalog-experimental.js';
 
 export interface InitializeModelSystemOptions {
   readonly config: ModelSystemConfigPort;
+  /** Trusted prototype injection; absent from the default application startup. */
+  readonly experimentalSiwc?: ExperimentalSiwcOwnerOptions;
   readonly resolverOptions?: Omit<
     LocalModelResolverOptions,
     'providerConfig' | 'providerConfigGetter' | 'byokConfigGetter'
@@ -35,6 +38,7 @@ export interface ModelSystemOwner {
   readonly providers: LocalModelProviderService;
   readonly oauth: CodexOAuthManager;
   readonly listProviderPresets: () => Promise<ByokProviderPresetView[]>;
+  readonly experimentalSiwc?: ExperimentalSiwcOwner;
 }
 
 /** Binds every Model System config operation to the active Runtime profile. */
@@ -57,6 +61,7 @@ export function createLocalModelSystemConfigPort(read: () => LocalRuntimeConfig 
 
 /** Composes the single Runtime V2 owner for model resolution and Provider management. */
 export function initializeModelSystem(options: InitializeModelSystemOptions): ModelSystemOwner {
+  const experimentalSiwc = options.experimentalSiwc ? new ExperimentalSiwcOwner(options.experimentalSiwc) : undefined;
   const providerPresets = new ProviderPresetCatalog({
     dataDir: options.config.read().dataDir,
     previewSecret: process.env.PREVIEW_SECRET,
@@ -64,6 +69,7 @@ export function initializeModelSystem(options: InitializeModelSystemOptions): Mo
   });
   const resolver = new LocalModelResolver({
     ...options.resolverOptions,
+    ...(experimentalSiwc ? { experimentalSiwc: experimentalSiwc.resolverProvider } : {}),
     providerConfigGetter: () => options.config.read().provider,
     byokConfigGetter: () => {
       const config = options.config.read();
@@ -96,5 +102,6 @@ export function initializeModelSystem(options: InitializeModelSystemOptions): Mo
     providers,
     oauth,
     listProviderPresets: () => providerPresets.listProviderPresets(),
+    ...(experimentalSiwc ? { experimentalSiwc } : {}),
   };
 }

@@ -19,6 +19,7 @@ import {
   AgentModelSelectionError,
   type ModelSystemConfigPort,
   type ModelSystemOwner,
+  type InitializeModelSystemOptions,
 } from '../../service/model-system/index.js';
 import {
   createImportedSessionPinCallback,
@@ -71,6 +72,7 @@ export interface ProductionSessionComposition {
 }
 
 export interface RuntimeSessionCompositionInput {
+  readonly experimentalSiwc?: InitializeModelSystemOptions['experimentalSiwc'];
   readonly db: Parameters<typeof initializeSessionSystem>[0]['db'];
   readonly dataDir: string;
   readonly baseProduct: Omit<ProductionAgentProductCapabilities, 'agents'>;
@@ -135,6 +137,7 @@ export function createProductionSessionComposition(
   const modelSystem = initializeModelSystem({
     config: input.modelConfig,
     resolverOptions: product.preparation.modelResolver,
+    ...(input.experimentalSiwc ? { experimentalSiwc: input.experimentalSiwc } : {}),
     ...(product.fileApi?.fetchImpl ? { fetchImpl: product.fileApi.fetchImpl } : {}),
     ...(tuiProductPolicy ? { implicitCustomProviderThinking: true } : {}),
   });

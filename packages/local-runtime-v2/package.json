@@ -108,6 +108,7 @@
     "drizzle-orm": "^0.45.2",
     "handlebars": "^4.7.9",
     "hono": "^4.7.11",
+    "jose": "6.2.12",
     "jszip": "^3.10.1",
     "proper-lockfile": "^4",
     "quickjs-emscripten": "0.31.0",

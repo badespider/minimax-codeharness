@@ -62,6 +62,7 @@ const steps = [
   // The SDK cancels `mcode` with POSIX signals; Windows only supports a hard kill.
   { name: "test:code-sdk", script: "test:code-sdk", platforms: ["darwin", "linux"] },
   { name: "test:windows", script: "test:windows", platforms: ["win32"], windows: true },
+  { name: "test:siwc-windows", script: "test:siwc-windows", platforms: ["win32"], windows: true },
   { name: "test:status-contract", script: "test:status-contract" },
   { name: "test:smoke", script: "test:smoke" },
   { name: "test:byok", script: "test:byok" },

@@ -757,6 +757,7 @@ function configureV1HostOptions(
     promptConfigKey,
     promptMode,
     systemPromptOverrides,
+    experimentalSiwc,
     ...v1Options
   } = options;
   void browserAdapter;
@@ -764,6 +765,7 @@ function configureV1HostOptions(
   void promptConfigKey;
   void promptMode;
   void systemPromptOverrides;
+  void experimentalSiwc;
   // V2 owns the channel startup point: the V1 shell must build stores, APIs,
   // runner and registries without restoring a single transport.
   if (compatibility) {
@@ -875,6 +877,7 @@ async function initializeOwnerRuntime(input: {
         : {}),
       capabilityProfile: options.capabilityProfile,
       systemPromptOverrides: options.systemPromptOverrides,
+      ...(options.experimentalSiwc ? { experimentalSiwc: options.experimentalSiwc } : {}),
       getRunawayGuardConfig: options.getRunawayGuardConfig,
       getPromptSuggestionPolicy: options.getPromptSuggestionPolicy,
       promptSuggestionSurface: options.promptSuggestionSurface,

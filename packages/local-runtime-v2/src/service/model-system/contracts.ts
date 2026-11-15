@@ -212,7 +212,26 @@ export interface LocalModelResolverLogger {
   warn(fields: Readonly<Record<string, unknown>>, message: string): void;
 }
 
+/** Experimental, explicitly injected integration; no runtime owner enables it. */
+export interface ExperimentalSiwcProvider {
+  /** Auth implementation must serialize refresh and return only verified active sessions. */
+  readonly getActiveSession: () => Promise<{
+    readonly accountKey: string;
+    readonly accessToken: string;
+    readonly scopes: readonly string[];
+  } | undefined>;
+  /** Account-specific model discovery must be supplied by a trusted owner. */
+  readonly getModel: (accountKey: string, modelId: string) => Promise<{
+    readonly contextWindow: number;
+    readonly maxTokens: number;
+  } | undefined>;
+  readonly withActiveTokenLease?: <T>(accountKey: string, action: (token: string, signal: AbortSignal) => Promise<T>, options?: { signal?: AbortSignal }) => Promise<T>;
+  /** Trusted test-only transport. Never derive from user/provider configuration. */
+  readonly fetchImpl?: typeof fetch;
+}
+
 export interface LocalModelResolverOptions {
+  readonly experimentalSiwc?: ExperimentalSiwcProvider;
   readonly providerConfig?: LocalModelsConfig;
   readonly providerConfigGetter?: () => LocalModelsConfig;
   readonly byokConfigGetter?: () => LocalByokProviderConfig | undefined;

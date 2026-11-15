@@ -31,12 +31,14 @@ import type {
   LocalModelsConfig,
   LocalProviderOptions,
   LocalRuntimeAuthContext,
+  ExperimentalSiwcProvider,
 } from '../contracts.js';
 import { normalizeProviderBaseUrl } from '../connectivity/provider-request.js';
 import {
   isModelProviderApi,
   MANAGED_MINIMAX_PROVIDER_ID,
   OPENAI_CODEX_PROVIDER_ID,
+  EXPERIMENTAL_SIWC_PROVIDER_ID,
 } from '../identity.js';
 import { parseProviderId } from './model-key.js';
 import {
@@ -66,6 +68,7 @@ import { withByokErrorAttribution } from './byok-error-attribution.js';
 import { withLocalDynamicMaxTokens } from './dynamic-max-tokens.js';
 import { resolveLocalRequestBodyBytes } from './file-api-capabilities.js';
 import { resolveLocalFileApiGatewayAuth } from './file-api-gateway-auth.js';
+import { withExperimentalSiwcStream } from './siwc-stream-experimental.js';
 
 /** Strips trailing `char` repeats in linear time (no backtracking regex). */
 function trimTrailingChar(value: string, char: string): string {
@@ -142,12 +145,59 @@ export class LocalModelResolver implements LocalModelResolverLike {
   }
 
   async resolveModel(input: LocalModelResolveInput): Promise<LocalResolvedModelConfig> {
+    if (input.agentConfig.model?.provider?.trim() === EXPERIMENTAL_SIWC_PROVIDER_ID) {
+      return this.resolveExperimentalSiwc(input, requireModelIdentity(input.agentConfig));
+    }
     const providerConfig = this.options.providerConfigGetter?.() ?? this.options.providerConfig;
     const selected = selectModel(input.agentConfig, providerConfig, this.options);
     if (selected.byokPlan) return this.finishByok(input, selected);
     const switched = selectMinimaxByok(selected.identity, providerConfig, this.options);
     if (switched.byokPlan) return this.finishByok(input, switched);
     return this.resolveManagedModel(input, switched.identity, providerConfig);
+  }
+
+  private async resolveExperimentalSiwc(input: LocalModelResolveInput, identity: ModelIdentity): Promise<LocalResolvedModelConfig> {
+    const provider = this.options.experimentalSiwc;
+    if (!provider) throw new Error('LocalModelResolver: experimental SIWC provider is disabled.');
+    const session = await readSiwcSession(provider);
+    if (!isUsableSiwcSession(session)) throw new Error('LocalModelResolver: SIWC login with plan permission is required.');
+    const accountKey = session.accountKey;
+    let metadata: Awaited<ReturnType<ExperimentalSiwcProvider['getModel']>>;
+    try { metadata = await provider.getModel(accountKey, identity.modelId); }
+    catch { throw new Error('LocalModelResolver: SIWC model discovery failed.'); }
+    if (!metadata || !Number.isSafeInteger(metadata.contextWindow) || metadata.contextWindow <= 0 || !Number.isSafeInteger(metadata.maxTokens) || metadata.maxTokens <= 0) {
+      throw new Error('LocalModelResolver: SIWC model is unavailable for the selected account.');
+    }
+    const resolved = this.finishResolve({
+      ...identity,
+      modelRef: { ...identity.modelRef, context_window: metadata.contextWindow, max_tokens: metadata.maxTokens, capabilities: undefined },
+      sessionId: input.sessionId,
+      agentConfig: input.agentConfig,
+      api: 'openai-responses',
+      apiKey: 'siwc-session-supplied-at-request',
+      baseUrl: 'https://api.openai.com/v1',
+      contextWindow: metadata.contextWindow,
+      maxTokens: metadata.maxTokens,
+      managedProvider: false,
+      byokProvider: false,
+      customProvider: false,
+    });
+    return {
+      ...resolved,
+      streamFn: withExperimentalSiwcStream({
+        provider: EXPERIMENTAL_SIWC_PROVIDER_ID,
+        ...(provider.fetchImpl ? { fetchImpl: provider.fetchImpl } : {}),
+        withTokenLease: (action, signal) => {
+          if (!provider.withActiveTokenLease) throw new Error('SIWC request lease unavailable');
+          return provider.withActiveTokenLease(accountKey, action, { signal });
+        },
+        getAccessToken: async () => {
+          const active = await readSiwcSession(provider);
+          if (!isUsableSiwcSession(active) || active.accountKey !== accountKey) throw new Error('SIWC active account or authorization changed');
+          return active.accessToken;
+        },
+      }),
+    };
   }
 
   private async finishByok(
@@ -277,6 +327,15 @@ export class LocalModelResolver implements LocalModelResolverLike {
       'Resolved local conversation model route',
     );
   }
+}
+
+async function readSiwcSession(provider: ExperimentalSiwcProvider): Promise<Awaited<ReturnType<ExperimentalSiwcProvider['getActiveSession']>>> {
+  try { return await provider.getActiveSession(); }
+  catch { throw new Error('LocalModelResolver: SIWC session unavailable.'); }
+}
+
+function isUsableSiwcSession(session: Awaited<ReturnType<ExperimentalSiwcProvider['getActiveSession']>>): session is NonNullable<typeof session> {
+  return Boolean(session && typeof session.accountKey === 'string' && session.accountKey.trim() && typeof session.accessToken === 'string' && session.accessToken.trim() && !/[\r\n]/.test(session.accessToken) && Array.isArray(session.scopes) && session.scopes.includes('chatgpt.tokens.use.direct'));
 }
 
 function resolveModelFetch(

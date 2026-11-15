@@ -5,6 +5,7 @@ import type {
   LocalRuntimeProductHostOptions as V1LocalRuntimeProductHostOptions,
 } from '@mavis/local-runtime';
 import type { LocalBrowserAdapter, LocalBrowserToolExposure } from '@mavis/agent-tools/desktop';
+import type { ExperimentalSiwcOwnerOptions } from '../service/model-system/siwc-catalog-experimental.js';
 import type {
   MiniAppPresenter,
   LocalRuntimeApplication,
@@ -43,6 +44,8 @@ interface LocalRuntimeSystemPromptOverrides {
 
 /** Product-facing options owned by the Runtime V2 process-local host. */
 interface LocalRuntimeProductHostOptions extends V1LocalRuntimeProductHostOptions {
+  /** Trusted in-process injection only; no user configuration or CLI flag enables this. */
+  readonly experimentalSiwc?: ExperimentalSiwcOwnerOptions;
   /** Best-effort DB upgrade observations; never awaited by startup. */
   onDatabaseMigration?: (event: DatabaseMigrationObservation) => undefined;
   configSource?: 'default' | 'explicit';
@@ -72,6 +75,7 @@ interface LocalRuntimeProductHostOptions extends V1LocalRuntimeProductHostOption
 
 /** Runtime V2 host options after process-local compatibility wiring. */
 interface CreateLocalRuntimeHostOptions extends V1CreateLocalRuntimeHostOptions {
+  readonly experimentalSiwc?: ExperimentalSiwcOwnerOptions;
   /** Owned process-local user entrypoint; never read from config or an HTTP request. */
   readonly cliPtcEntrypoint?: "interactive" | "exec";
   /** Best-effort DB upgrade observations; never awaited by startup. */

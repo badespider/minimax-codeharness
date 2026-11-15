@@ -7,6 +7,8 @@ import {
 export { CUSTOM_PROVIDER_ID_PREFIX, MANAGED_MINIMAX_PROVIDER_ID, MINIMAX_API_PROVIDER_ID };
 
 export const OPENAI_CODEX_PROVIDER_ID = 'openai-codex';
+/** Reserved prototype identity; never registered or enabled by default. */
+export const EXPERIMENTAL_SIWC_PROVIDER_ID = 'openai-siwc-experimental';
 
 export const MODEL_PROVIDER_SOURCES = ['provider', 'minimax_api', 'custom_provider'] as const;
 export type ModelProviderSource = (typeof MODEL_PROVIDER_SOURCES)[number];

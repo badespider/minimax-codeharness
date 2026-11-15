@@ -13,6 +13,7 @@ import { configureTuiNetworkProxy } from './network-proxy.js';
 import { consumeLoginRestartHandoff } from '../tui/login-restart-handoff.js';
 import type { SystemPromptOverrides } from './system-prompt-options.js';
 import type { McodeTelemetryCliAction } from './telemetry-command.js';
+import type { ExperimentalSiwcRequest } from './experimental-siwc-command.js';
 
 const OUTPUT_DRAIN_TIMEOUT_MS = 250;
 const MINIMAX_CODE_PROCESS_TITLE = 'minimax-code';
@@ -38,6 +39,8 @@ export interface TuiCliProcess {
 
 interface LaunchTuiInput extends TuiInteractiveLaunchRequest {
   readonly version: string;
+  readonly experimentalSiwc?: import('@mavis/local-runtime-v2/process-local').CreateLocalRuntimeHostOptions['experimentalSiwc'];
+  readonly experimentalSiwcModels?: readonly import('../runtime/experimental-siwc-projection.js').ExperimentalSiwcModelProjection[];
 }
 
 export interface RunTuiCliDependencies {
@@ -78,6 +81,9 @@ export interface RunTuiCliDependencies {
     version: string,
     environment: NodeJS.ProcessEnv,
   ) => Promise<string> | string;
+  /** Explicit trusted test/host injection only; no default implementation is activated. */
+  readonly runExperimentalSiwc?: (request: ExperimentalSiwcRequest) => Promise<string>;
+  readonly createExperimentalSiwc?: (environment: NodeJS.ProcessEnv) => Promise<Awaited<ReturnType<typeof defaultCreateExperimentalSiwc>>>;
   readonly configureNetworkProxy?: typeof configureTuiNetworkProxy;
   readonly allowStartupEnvironmentSelection?: boolean;
   readonly outputDrainTimeoutMs?: number;
@@ -106,6 +112,14 @@ export async function runTuiCli(dependencies: RunTuiCliDependencies = {}): Promi
     const createProgram = dependencies.createProgram ?? createTuiProgram;
     await createProgram({
       version: MINIMAX_CODE_VERSION,
+      runExperimentalSiwc: async (request: ExperimentalSiwcRequest) => {
+        if (request.action === 'connect' || request.action === 'add-account' || request.action === 'enable-plan' || request.action === 'retry') {
+          processRef.stdout.write('Opening your browser for ChatGPT authorization. If you approve plan usage, MiniMax requests use your ChatGPT plan.\n');
+        }
+        const run = dependencies.runExperimentalSiwc ?? ((value: ExperimentalSiwcRequest) => defaultRunExperimentalSiwc(value, processRef.env));
+        processRef.stdout.write(`${await run(request)}\n`);
+        completedCommandExitMode = 'natural';
+      },
       allowStartupEnvironmentSelection: dependencies.allowStartupEnvironmentSelection,
       launchTui: async ({
         initialPrompt,
@@ -121,6 +135,12 @@ export async function runTuiCli(dependencies: RunTuiCliDependencies = {}): Promi
         systemPromptOverrides,
       }) => {
         const launchTui = dependencies.launchTui ?? defaultLaunchTui;
+        const experimental = model?.startsWith('openai-siwc-experimental/')
+          ? await (dependencies.createExperimentalSiwc ?? defaultCreateExperimentalSiwc)(processRef.env)
+          : undefined;
+        try {
+        const catalog = experimental ? await experimental.getRuntimeModels() : undefined;
+        if (experimental && !catalog?.models.some((entry) => `openai-siwc-experimental/${entry.slug}` === model)) throw new Error('Selected ChatGPT model is unavailable for this account.');
         await launchTui({
           version: MINIMAX_CODE_VERSION,
           ...(initialPrompt ? { initialPrompt } : {}),
@@ -135,7 +155,9 @@ export async function runTuiCli(dependencies: RunTuiCliDependencies = {}): Promi
           ...(lane ? { lane } : {}),
           ...(systemPromptOverrides ? { systemPromptOverrides } : {}),
           ...(resumeDraftAfterLogin ? { resumeDraftAfterLogin: true } : {}),
+          ...(experimental ? { experimentalSiwc: experimental.runtimeOptions, experimentalSiwcModels: catalog!.models } : {}),
         });
+        } finally { await experimental?.close(); }
         completedCommandExitMode = 'force';
       },
       runExec: async (prompt, commandOptions, lane) => {
@@ -211,6 +233,18 @@ export async function runTuiCli(dependencies: RunTuiCliDependencies = {}): Promi
     processRef.stderr.write(`${await formatTuiCliError(error)}\n`);
     processRef.exitCode = 1;
   }
+}
+
+async function defaultCreateExperimentalSiwc(environment: NodeJS.ProcessEnv) {
+  const [{ createExperimentalSiwcCli }, { getTuiDataDirPath }, { openSiwcAuthorization }] = await Promise.all([
+    import('./experimental-siwc-bootstrap.js'), import('../runtime/data-dir.js'), import('./experimental-siwc-open.js'),
+  ]);
+  return createExperimentalSiwcCli({ dataDir: getTuiDataDirPath(environment), openExternal: openSiwcAuthorization });
+}
+
+async function defaultRunExperimentalSiwc(request: ExperimentalSiwcRequest, environment: NodeJS.ProcessEnv): Promise<string> {
+  const owner = await defaultCreateExperimentalSiwc(environment);
+  try { return await owner.run(request); } finally { await owner.close(); }
 }
 
 async function formatTuiCliError(error: unknown): Promise<string> {

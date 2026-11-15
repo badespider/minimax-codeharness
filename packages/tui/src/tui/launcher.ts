@@ -76,6 +76,8 @@ import type { McodeContextMode } from '@mavis/protocol/local';
 const MINIMAX_CODE_EXIT_SLOGAN = 'Intelligence with everyone, bye~';
 export interface LaunchTuiOptions {
   version: string;
+  experimentalSiwc?: import('@mavis/local-runtime-v2/process-local').CreateLocalRuntimeHostOptions['experimentalSiwc'];
+  experimentalSiwcModels?: readonly import('../runtime/experimental-siwc-projection.js').ExperimentalSiwcModelProjection[];
   initialPrompt?: string;
   model?: string;
   sessionId?: string;
@@ -112,6 +114,8 @@ interface RuntimeLifecycleModule {
   createTuiRuntime(
     options: {
       dataDir: string;
+      experimentalSiwc?: LaunchTuiOptions['experimentalSiwc'];
+      experimentalSiwcModels?: LaunchTuiOptions['experimentalSiwcModels'];
       workspaceDir: string;
       version: string;
       surface: 'tui';
@@ -356,6 +360,8 @@ export async function launchTui(
       runtimePromise = lifecycle.createTuiRuntime(
         {
           dataDir,
+          ...(options.experimentalSiwc ? { experimentalSiwc: options.experimentalSiwc } : {}),
+          ...(options.experimentalSiwcModels ? { experimentalSiwcModels: options.experimentalSiwcModels } : {}),
           workspaceDir,
           version: options.version,
           surface: 'tui',

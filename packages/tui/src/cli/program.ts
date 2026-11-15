@@ -29,6 +29,7 @@ import {
   type SystemPromptOverrides,
 } from './system-prompt-options.js';
 import type { McodeTelemetryCliAction } from './telemetry-command.js';
+import type { ExperimentalSiwcRequest } from './experimental-siwc-command.js';
 
 export type { TuiInteractiveLaunchRequest } from './contract.js';
 
@@ -57,6 +58,8 @@ export interface CreateTuiProgramOptions {
   resolveLane?: typeof resolveTuiManagedBackendLane;
   allowStartupEnvironmentSelection?: boolean;
   commandContributions?: readonly TuiCliCommandContribution[];
+  /** Trusted internal opt-in; normal CLI startup does not supply this runner. */
+  runExperimentalSiwc?: (request: ExperimentalSiwcRequest) => Promise<void>;
 }
 
 export function createTuiProgram(options: CreateTuiProgramOptions): Command {
@@ -167,6 +170,22 @@ export function createTuiProgram(options: CreateTuiProgramOptions): Command {
     .option('--region <region>', 'account region: cn or global', parseLoginRegion)
     .allowExcessArguments(false)
     .action((commandOptions: { region?: MavisRegion }) => options.runLogout(commandOptions.region));
+
+  if (options.runExperimentalSiwc) {
+    const run = options.runExperimentalSiwc;
+    const chatgpt = program.command('chatgpt').description('Manage the separate MiniMax ChatGPT connection');
+    chatgpt.command('connect').description('Authorize MiniMax with ChatGPT').action(() => run({ action: 'connect' }));
+    chatgpt.command('add-account').description('Authorize another ChatGPT account').action(() => run({ action: 'add-account' }));
+    chatgpt.command('enable-plan').description('Enable ChatGPT plan usage for MiniMax').action(() => run({ action: 'enable-plan' }));
+    chatgpt.command('status').action(() => run({ action: 'status' }));
+    chatgpt.command('accounts').action(() => run({ action: 'accounts' }));
+    chatgpt.command('account').argument('<client-id>').action((clientId: string) => run({ action: 'account', clientId }));
+    chatgpt.command('pending').action(() => run({ action: 'pending' }));
+    chatgpt.command('retry').argument('<client-id>').action((clientId: string) => run({ action: 'retry', clientId }));
+    chatgpt.command('models').action(() => run({ action: 'models' }));
+    chatgpt.command('use').argument('<model-id>').action((modelId: string) => run({ action: 'use', modelId }));
+    chatgpt.command('disconnect').action(() => run({ action: 'disconnect' }));
+  }
 
   program
     .command('update')

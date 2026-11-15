@@ -96,6 +96,7 @@ import type {
 import type { AppDb } from "./infra/db/client.js";
 import type { EventBusClient } from "./infra/event-bus/index.js";
 import type { RuntimeOwnerIdentity } from "./infra/runtime-owner/index.js";
+import type { ExperimentalSiwcOwnerOptions } from "./service/model-system/siwc-catalog-experimental.js";
 import type { SchedulerClient } from "./infra/scheduler/index.js";
 import {
   AgentFavorites,
@@ -286,6 +287,7 @@ export interface RuntimeServicesTestOverrides {
 export interface CreateRuntimeServicesOptions
   extends RuntimeMiniAppServiceOptions {
   readonly db: AppDb;
+  readonly experimentalSiwc?: ExperimentalSiwcOwnerOptions;
   readonly logger?: PluginServiceLogger;
   readonly scheduler?: SchedulerClient;
   readonly metrics?: CronMetricsClient & {
@@ -457,6 +459,7 @@ export async function createRuntimeServices(
     publishGlobalEvent: writeGlobalEvent,
     agentSessionPorts,
     modelConfig: createLocalModelSystemConfigPort(readAgentHostConfig),
+    ...(options.experimentalSiwc ? { experimentalSiwc: options.experimentalSiwc } : {}),
     agentReferenceProjection: createRuntimeAgentReferenceProjection(
       options.compatibility,
       options.agentService,
@@ -620,7 +623,12 @@ export async function createRuntimeServices(
     ),
     builtinAgentDefinitionsReady: lifecycle.builtinAgentDefinitionsReady,
     ready: owners.miniAppComposition.ready,
-    close: owners.miniAppComposition.close,
+    close: modelSystem.experimentalSiwc
+      ? async () => {
+          try { await owners.miniAppComposition.close(); }
+          finally { await modelSystem.experimentalSiwc?.dispose(); }
+        }
+      : owners.miniAppComposition.close,
   };
 }
 
